@@ -1,0 +1,36 @@
+# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY
+_commit: 0a6553c
+_src_path: https://github.com/pyfar/template-pyfar-package
+add_submodules: false
+additional_section_readme: ''
+apt_packages: libsndfile1
+author: The pyfar developers
+copyright_statement: 2026, The pyfar developers
+dependencies: numpy,scipy,pyfar,spharpy,matplotlib
+docs_custom_import: ''
+git_username: pyfar
+gitignore_custom: ''
+intersphinx_mapping:
+- numpy
+- scipy
+- matplotlib
+- pyfar
+- gallery
+- spharpy
+introduction_path: ''
+keywords: acoustics,pyfar,parametric,spatial,audio,signal-processing,room-impulse-responses,sdm,sirr
+license: MIT
+logo_path_gallery: resources/logos/pyfar_logos_fixed_size_pyfar.png
+manifest_custom: ''
+minimum_python_version: '3.11'
+project_getting_started: ''
+project_installation_instructions: ''
+project_long_description: The python package spatial parametric audio rendering (pyspar)
+    offers methods for processing spatial impulse responses and running signals. It
+    contains functions of analysis, rendering and visualization.
+project_short_description: Methods for processing spatial impulse responses and running
+    spatial audio signals.
+project_slug: pyspar
+ruff_ignore: .git,docs
+use_pypi_deployment_with_ci: true
+version: 0.1.0
