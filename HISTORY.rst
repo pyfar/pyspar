@@ -26,6 +26,10 @@ Added
 * ``TimeDifferenceOfArrivalAnalyzer`` estimating one direction of arrival per
   sample from the time differences of arrival at an open microphone array,
   with the frame of the array by default and an error for shorter ones.
+* ``AmbisonicSynthesizer`` upmixing an analysis to higher-order Ambisonics
+  with the Ambisonic Spatial Decomposition Method, and ``passband`` on
+  ``PseudoIntensityVectorAnalyzer`` estimating the directions from the
+  band-passed signal.
 
 Changed
 ^^^^^^^

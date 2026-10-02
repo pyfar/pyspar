@@ -7,6 +7,7 @@ import pyfar as pf
 import pytest
 from conftest import (
     SPEED_OF_SOUND, delayed_impulses, encode, octahedron, sh_signal)
+from scipy.signal import butter, filtfilt
 from spharpy import SphericalHarmonicSignal
 
 from pyspar import parametric
@@ -181,6 +182,7 @@ def test_default_parameters():
     analyzer = parametric.PseudoIntensityVectorAnalyzer(None)
 
     assert analyzer.window_length is None
+    assert analyzer.passband is None
 
 
 @pytest.mark.parametrize('window_length', [1, 0, -3])
@@ -434,3 +436,95 @@ def test_tdoa_error_if_the_channel_count_disagrees(microphones):
 def test_tdoa_error_if_the_signal_is_shorter_than_a_frame(microphones):
     with pytest.raises(ValueError, match=r'fewer than the \d+-sample'):
         tdoa(microphones)(pf.Signal(np.zeros((6, 10)), 48000))
+
+
+# ===== band-limited pseudo-intensity vector ================================
+
+def band_passed_vector(data, sampling_rate, passband):
+    """Unit pseudo-intensity vector of the band-passed channels.
+
+    A second-order Butterworth band-pass in transfer-function form, applied
+    forward and backward with the signal extended by 12 samples at both
+    ends.
+    """
+    b, a = butter(2, passband, btype='bandpass', fs=sampling_rate)
+    filtered = filtfilt(b, a, data, axis=0, padlen=12)
+    vector = filtered[:, [3, 1, 2]] * filtered[:, :1]
+    norm = np.linalg.norm(vector, axis=1, keepdims=True)
+    return np.divide(vector, norm, out=np.zeros_like(vector),
+                     where=norm > 0)
+
+
+def test_passband_without_a_window_is_the_band_passed_vector(
+        impulse_response):
+    data = np.asarray(impulse_response.time)[0].T
+
+    doa = parametric.PseudoIntensityVectorAnalyzer(
+        None, passband=(200, 4000))(impulse_response).doa.cartesian
+
+    npt.assert_allclose(doa, band_passed_vector(data, 48000, (200, 4000)),
+                        atol=1e-12)
+
+
+@pytest.mark.parametrize(('azimuth', 'elevation'), [
+    (0, 0), (-120, -45), (0, 89.9)])
+def test_passband_recovers_a_plane_wave(azimuth, elevation):
+    direction = pf.Coordinates.from_spherical_elevation(
+        np.deg2rad(azimuth), np.deg2rad(elevation), 1)
+    pressure = np.zeros(256)
+    pressure[100] = 1.0
+
+    doa = parametric.PseudoIntensityVectorAnalyzer(
+        window_length=11, passband=(200, 4000))(
+            encode(pressure, direction)).doa.cartesian
+
+    npt.assert_allclose(doa[5:-5],
+                        np.tile(direction.cartesian, (len(doa) - 10, 1)),
+                        atol=1e-12)
+
+
+def test_passband_ends_point_to_the_zenith(impulse_response):
+    window_length = 11
+    doa = parametric.PseudoIntensityVectorAnalyzer(
+        window_length=window_length, passband=(200, 4000))(
+            impulse_response).doa.cartesian
+
+    half = window_length // 2
+    zenith = np.all(doa == (0.0, 0.0, 1.0), axis=1)
+    assert np.all(zenith[:half])
+    assert np.all(zenith[len(doa) - half:])
+    assert not np.any(zenith[half:len(doa) - half])
+
+
+def test_passband_keeps_the_full_band_pressure_and_signal(impulse_response):
+    full = parametric.PseudoIntensityVectorAnalyzer(None)(impulse_response)
+
+    result = parametric.PseudoIntensityVectorAnalyzer(
+        window_length=11, passband=(200, 4000))(impulse_response)
+
+    npt.assert_array_equal(result.pressure.time[0], full.pressure.time[0])
+    npt.assert_array_equal(np.asarray(result.signal.time),
+                           np.asarray(full.signal.time))
+
+
+def test_passband_is_stored_as_floats():
+    analyzer = parametric.PseudoIntensityVectorAnalyzer(
+        None, passband=[200, 4000])
+
+    assert analyzer.passband == (200.0, 4000.0)
+
+
+@pytest.mark.parametrize('passband', [
+    (4000, 200), (0, 4000), (200,), (100, 200, 400)])
+def test_passband_error_if_the_edges_are_invalid(passband):
+    with pytest.raises(ValueError, match='passband is .* but must be two'):
+        parametric.PseudoIntensityVectorAnalyzer(None, passband=passband)
+
+
+def test_passband_error_if_it_reaches_half_the_sampling_rate(
+        impulse_response):
+    analyzer = parametric.PseudoIntensityVectorAnalyzer(
+        None, passband=(200, 24000))
+
+    with pytest.raises(ValueError, match='below half the sampling rate'):
+        analyzer(impulse_response)

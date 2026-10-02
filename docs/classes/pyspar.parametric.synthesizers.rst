@@ -9,8 +9,14 @@ Synthesizers
 
 .. autosummary::
 
+   AmbisonicSynthesizer
    BinauralSynthesizer
    LoudspeakerSynthesizer
+
+.. autoclass:: pyspar.parametric.AmbisonicSynthesizer
+   :members:
+   :undoc-members:
+   :inherited-members:
 
 .. autoclass:: pyspar.parametric.BinauralSynthesizer
    :members:

@@ -1,10 +1,11 @@
-"""Synthesizers turning an analysis result into loudspeaker or ear signals."""
+"""Synthesizers of loudspeaker, binaural and Ambisonic renderings."""
 from __future__ import annotations
 
 import numpy as np
 import pyfar as pf
 from scipy.signal import sosfiltfilt
 from spharpy import SphericalHarmonicSignal
+from spharpy.spherical import spherical_harmonic_basis_real
 
 from .classes import SynthesizerBase, TimeResult
 from pyspar.utils.directions import _nearest_directions, _replace_missing_doa
@@ -494,3 +495,117 @@ class BinauralSynthesizer(SynthesizerBase):
             Left and right ear signals, ``cshape (2,)``.
         """
         return self.convolve(self.render_loudspeakers(result))
+
+
+class AmbisonicSynthesizer(SynthesizerBase):
+    r"""Upmix an analysis result to a higher-order Ambisonic signal.
+
+    The Ambisonic Spatial Decomposition Method (ASDM) [#]_ re-encodes every
+    sample of the pressure :math:`h(t)` at its direction of arrival
+    :math:`\theta(t)`,
+    :math:`\tilde{h}_{nm}(t) = \sqrt{4\pi}\, Y_n^m(\theta(t))\, h(t)`, with
+    the real spherical harmonics of the output normalization without the
+    Condon-Shortley phase and :math:`Y_0^0 = 1 / \sqrt{4\pi}`; the factor
+    :math:`\sqrt{4\pi}` makes the omnidirectional channel
+    :math:`\tilde{h}_{00}` equal to the pressure. A direction the analysis
+    leaves undefined is taken straight ahead.
+
+    Parameters
+    ----------
+    order : int
+        Ambisonic order of the output, at least ``0``.
+    method : ``'asdm'``, optional
+        Upmixing method. Only the standard ASDM is currently implemented.
+    normalization : ``'N3D'``, ``'SN3D'``, optional
+        Normalization of the output. The default is ``'N3D'``.
+
+    Attributes
+    ----------
+    order : int
+        Ambisonic order of the output.
+    method : str
+        Upmixing method in use.
+    normalization : str
+        Normalization of the output.
+
+    Notes
+    -----
+    The omnidirectional channel of the output equals the pressure of the
+    analysis at every order.
+
+    References
+    ----------
+    .. [#] M. Zaunschirm, M. Frank and F. Zotter, "Binaural rendering with
+           measured room responses: First-order Ambisonic microphone vs.
+           dummy head," Appl. Sci., vol. 10, no. 5, p. 1631, 2020.
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> import pyspar
+    >>> from spharpy import SphericalHarmonicSignal
+    >>> signal = SphericalHarmonicSignal(
+    ...     np.random.default_rng(0).standard_normal((4, 256)), 48000,
+    ...     'real', 'N3D', 'ACN', False)
+    >>> result = pyspar.parametric.PseudoIntensityVectorAnalyzer(
+    ...     window_length=5)(signal)
+    >>> upmixed = pyspar.parametric.AmbisonicSynthesizer(order=3)(result)
+    >>> upmixed.n_max, upmixed.normalization
+    (3, 'N3D')
+    """
+
+    def __init__(self, order, method='asdm', normalization='N3D'):
+        if (isinstance(order, bool)
+                or not isinstance(order, (int, np.integer))):
+            raise TypeError(
+                "order must be an integer; got "
+                f"{type(order).__name__}.")
+        if order < 0:
+            raise ValueError(f"order is {order} but must be non-negative.")
+        if method != 'asdm':
+            raise ValueError(f"method is '{method}' but must be 'asdm'.")
+        if normalization not in ('N3D', 'SN3D'):
+            raise ValueError(
+                f"normalization is '{normalization}' but must be 'N3D' or "
+                "'SN3D'.")
+
+        self.order = int(order)
+        self.method = method
+        self.normalization = normalization
+
+    def __call__(self, result: TimeResult) -> SphericalHarmonicSignal:
+        """Upmix `result` to a higher-order Ambisonic signal.
+
+        Parameters
+        ----------
+        result : pyspar.parametric.TimeResult
+            Pressure and direction of arrival per sample.
+
+        Returns
+        -------
+        signal : spharpy.SphericalHarmonicSignal
+            Real Ambisonic signal of order `order` in ACN order, with the
+            requested normalization and without the Condon-Shortley phase.
+        """
+        if not isinstance(result, TimeResult):
+            raise TypeError(
+                "AmbisonicSynthesizer requires a "
+                "pyspar.parametric.TimeResult; got "
+                f"{type(result).__name__}.")
+
+        directions = _replace_missing_doa(result.doa, result.pressure.time[0])
+        doa = pf.Coordinates(directions[:, 0], directions[:, 1],
+                             directions[:, 2])
+        basis = spherical_harmonic_basis_real(
+            self.order, doa, normalization=self.normalization)
+
+        # Divided by the order-zero harmonic, 1/sqrt(4 pi), so that W stays the
+        # pressure.
+        omni = spherical_harmonic_basis_real(
+            0, pf.Coordinates(1.0, 0.0, 0.0),
+            normalization=self.normalization)[0, 0]
+        data = (result.pressure.time[0] / omni)[:, None] * basis
+
+        return SphericalHarmonicSignal(
+            data.T, result.sampling_rate, 'real', self.normalization, 'ACN',
+            False)
