@@ -8,8 +8,8 @@ from spharpy.spherical import spherical_harmonic_basis_real
 
 from .classes import SynthesizerBase, TimeResult
 from .postprocessors import (
-    LoudspeakerSpectrumEqualization, SpectralDecayCorrection,
-    SpectralEqualization)
+    LoudspeakerSpectrumEqualization, RoughnessCompensation,
+    SpectralDecayCorrection, SpectralEqualization)
 from pyspar.utils.directions import _nearest_directions, _replace_missing_doa
 
 
@@ -40,8 +40,13 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         LFE channels.
     lfe_cutoff : float, optional
         Crossover frequency of the LFE channels in Hz. The default is ``80``.
+    roughness : str, pyspar.parametric.RoughnessCompensation, optional
+        Compensation of the sparse loudspeaker signals, applied after panning:
+        a mode of :class:`~pyspar.parametric.RoughnessCompensation` with its
+        default settings, or an instance for other settings. ``None``, the
+        default, applies none.
     correction : str or pyspar.parametric.Postprocessor, optional
-        Equalization of the loudspeaker signals, applied after panning:
+        Equalization of the loudspeaker signals, applied after `roughness`:
         ``'minphase'`` or ``'linphase'`` for a
         :class:`~pyspar.parametric.SpectralEqualization` with its default
         settings, which adds 1023 samples to the signals;
@@ -62,20 +67,22 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         Indices of the LFE channels.
     lfe_cutoff : float
         Crossover frequency of the LFE channels in Hz.
+    roughness : pyspar.parametric.RoughnessCompensation or None
+        Roughness compensation in use.
     correction : pyspar.parametric.Postprocessor or None
         Equalization in use.
 
     Notes
     -----
-    With `lfe_channels`, a crossover runs after the panning and the
-    equalization: third-order Butterworth low-pass and high-pass filters at
-    `lfe_cutoff`, applied forward and backward. The other loudspeakers are
-    high-passed, and their low-passed signals go in equal shares to the LFE
-    channels on their side; a loudspeaker in the median plane gives half to
-    each side, an LFE channel in the median plane serves both sides, and a side
-    without an LFE channel is served by all of them. Left and right follow from
-    the positions in `loudspeakers`. All channels together add up to the
-    signals before the crossover, except near its ends.
+    With `lfe_channels`, a crossover runs after the panning, the roughness
+    compensation and the equalization: third-order Butterworth low-pass and
+    high-pass filters at `lfe_cutoff`, applied forward and backward. The other
+    loudspeakers are high-passed, and their low-passed signals go in equal
+    shares to the LFE channels on their side; a loudspeaker in the median plane
+    gives half to each side, an LFE channel in the median plane serves both
+    sides, and a side without an LFE channel is served by all of them. Left and
+    right follow from the positions in `loudspeakers`. All channels together
+    add up to the signals before the crossover, except near its ends.
 
     References
     ----------
@@ -107,7 +114,8 @@ class LoudspeakerSynthesizer(SynthesizerBase):
     """
 
     def __init__(self, loudspeakers, panning='nls', dimensionality=3,
-                 lfe_channels=None, lfe_cutoff=80, correction=None):
+                 lfe_channels=None, lfe_cutoff=80, roughness=None,
+                 correction=None):
         if not isinstance(loudspeakers, pf.Coordinates):
             raise TypeError(
                 "loudspeakers must be a pyfar.Coordinates; got "
@@ -138,6 +146,7 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         self.dimensionality = dimensionality
         self.lfe_channels = lfe_channels
         self.lfe_cutoff = float(lfe_cutoff)
+        self.roughness = _resolve_roughness(roughness)
         self.correction = _resolve_correction(correction)
 
     def __call__(self, result: TimeResult) -> pf.Signal:
@@ -176,6 +185,8 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         data[np.arange(n_samples), panned[index]] = pressure
 
         signal = pf.Signal(data.T, result.sampling_rate)
+        if self.roughness is not None:
+            signal = self.roughness(signal, result=result)
         if self.correction is not None:
             signal = self.correction(signal, result=result)
         if self.lfe_channels:
@@ -289,6 +300,18 @@ def _lfe_crossover(signal, loudspeakers, lfe_channels, cutoff):
     return pf.Signal(split.T, sampling_rate)
 
 
+def _resolve_roughness(roughness):
+    """Return `roughness` as a RoughnessCompensation, or None."""
+    if roughness is None or isinstance(roughness, RoughnessCompensation):
+        return roughness
+    if isinstance(roughness, str):
+        return RoughnessCompensation(roughness)
+    raise TypeError(
+        "roughness must be a mode string, a "
+        "pyspar.parametric.RoughnessCompensation or None; got "
+        f"{type(roughness).__name__}.")
+
+
 def _resolve_correction(correction):
     """Return `correction` as a correction, or None."""
     if isinstance(correction, SpectralDecayCorrection):
@@ -350,6 +373,10 @@ class BinauralSynthesizer(SynthesizerBase):
     panning : ``'nls'``, optional
         Panning law, see :class:`LoudspeakerSynthesizer`. The default is
         ``'nls'``.
+    roughness : str, pyspar.parametric.RoughnessCompensation, optional
+        Compensation of the sparse loudspeaker signals, applied before the
+        convolution with the head-related impulse responses, see
+        :class:`LoudspeakerSynthesizer`. The default is ``None``.
     correction : str or pyspar.parametric.Postprocessor, optional
         Equalization of the loudspeaker signals, applied before the
         convolution, one of:
@@ -361,7 +388,8 @@ class BinauralSynthesizer(SynthesizerBase):
           :class:`~pyspar.parametric.LoudspeakerSpectrumEqualization`;
         - an instance of one of these.
 
-        Only one equalization is applied. The default is ``None``.
+        It runs after `roughness`. Only one equalization is applied. The
+        default is ``None``.
 
     Attributes
     ----------
@@ -369,6 +397,8 @@ class BinauralSynthesizer(SynthesizerBase):
         The layout given, or ``None``.
     panning : str
         Panning law in use.
+    roughness : pyspar.parametric.RoughnessCompensation or None
+        Roughness compensation in use.
     correction : pyspar.parametric.Postprocessor or None
         Equalization in use.
 
@@ -423,7 +453,7 @@ class BinauralSynthesizer(SynthesizerBase):
     """
 
     def __init__(self, hrirs, hrir_directions, virtual_loudspeakers=None,
-                 panning='nls', correction=None):
+                 panning='nls', roughness=None, correction=None):
         if (not isinstance(hrirs, pf.Signal)
                 or isinstance(hrirs, SphericalHarmonicSignal)):
             raise TypeError(
@@ -462,7 +492,8 @@ class BinauralSynthesizer(SynthesizerBase):
                                                     virtual_loudspeakers)]
 
         self._loudspeaker_synthesizer = LoudspeakerSynthesizer(
-            virtual_loudspeakers, panning=panning, correction=correction)
+            virtual_loudspeakers, panning=panning, roughness=roughness,
+            correction=correction)
         self._hrirs = pf.Signal(measured, hrirs.sampling_rate)  # (L, 2)
         self._sampling_rate = float(hrirs.sampling_rate)
 
@@ -477,6 +508,11 @@ class BinauralSynthesizer(SynthesizerBase):
         return self._loudspeaker_synthesizer.panning
 
     @property
+    def roughness(self):
+        """Roughness compensation in use."""
+        return self._loudspeaker_synthesizer.roughness
+
+    @property
     def correction(self):
         """Equalization in use."""
         return self._loudspeaker_synthesizer.correction
@@ -484,8 +520,8 @@ class BinauralSynthesizer(SynthesizerBase):
     def render_loudspeakers(self, result: TimeResult) -> pf.Signal:
         """Render `result` to the loudspeaker signals only.
 
-        The signals include the equalization of the loudspeaker signals, if
-        any.
+        The signals include the roughness compensation and the equalization of
+        the loudspeaker signals, if any.
 
         Parameters
         ----------

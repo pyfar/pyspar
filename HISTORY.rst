@@ -48,6 +48,11 @@ Added
   that of the pressure over time with minimum- or linear-phase filters,
   available as ``correction='minphase'`` or ``'linphase'`` of the
   loudspeaker and binaural synthesizers.
+* ``RoughnessCompensation`` smoothing the late part of the sparse
+  loudspeaker signals of nearest-loudspeaker panning, from the estimated or
+  a given mixing time, or from the onset, with Schroeder allpasses or with a
+  velvet filter per loudspeaker, available as the ``roughness`` argument of
+  the loudspeaker and binaural synthesizers.
 
 Changed
 ^^^^^^^
