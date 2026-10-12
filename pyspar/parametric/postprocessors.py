@@ -8,6 +8,177 @@ import pyfar as pf
 from spharpy import SphericalHarmonicSignal
 
 from .classes import TimeResult, Postprocessor
+from pyspar.utils.dsp import _smooth_log_frequency
+
+
+class SpectralEqualization(Postprocessor):
+    """Match the spectrum of loudspeaker signals to that of the pressure.
+
+    The pressure and every loudspeaker signal are cut into blocks of 2048
+    samples without overlap. Per block, the magnitude of the regularized ratio
+    of their spectra, ``P conj(H) / (|H|^2 + beta^2)``, is smoothed in third
+    octaves and turned into a filter of 1024 taps that keeps the energy of the
+    block. The filter is applied to the block of the loudspeaker signal, and
+    the filtered blocks are added with their tails overlapping.
+
+    Parameters
+    ----------
+    mode : ``'minphase'``, ``'linphase'``, optional
+        Phase of the filters. ``'minphase'`` (default) gives minimum-phase
+        filters, which do not ring before the sound; ``'linphase'`` gives
+        linear-phase filters, which delay every block by 512 samples.
+    max_boost_db : float, optional
+        Strength of the regularization in dB,
+        ``beta = rms / (2 * 10^(max_boost_db / 20))`` with the rms magnitude
+        of the spectrum of the block: notches of the loudspeaker spectrum
+        more than ``max_boost_db + 6`` dB below that rms are not inverted
+        fully. It does not limit the gain of the filters, which follows from
+        keeping the energy. The default is ``20``; very large values turn the
+        regularization off.
+
+    Attributes
+    ----------
+    mode : str
+        Phase of the filters.
+    max_boost_db : float
+        Strength of the regularization in dB.
+
+    See Also
+    --------
+    LoudspeakerSpectrumEqualization
+
+    Notes
+    -----
+    `beta` is relative to the level of each block. A loudspeaker that is silent
+    in a block stays silent, and a block of a loudspeaker passes unfiltered if
+    the pressure is silent in it. The minimum phase is computed with
+    :func:`pyfar.dsp.minimum_phase`.
+
+    Examples
+    --------
+    Equalize the loudspeaker signals inside the synthesizer.
+
+    >>> import numpy as np
+    >>> import pyfar as pf
+    >>> import pyspar
+    >>> from spharpy import SphericalHarmonicSignal
+    >>> signal = SphericalHarmonicSignal(
+    ...     np.random.default_rng(0).standard_normal((4, 4096)), 48000,
+    ...     'real', 'N3D', 'ACN', False)
+    >>> loudspeakers = pf.Coordinates.from_spherical_elevation(
+    ...     np.deg2rad([0, 30, -30, 110, -110]), 0, 1)
+    >>> result = pyspar.parametric.PseudoIntensityVectorAnalyzer(
+    ...     window_length=5)(signal)
+    >>> rendered = pyspar.parametric.LoudspeakerSynthesizer(
+    ...     loudspeakers, correction='minphase')(result)
+    >>> rendered.cshape, rendered.n_samples
+    ((5,), 5119)
+    """
+
+    stage = 'loudspeaker'
+
+    def __init__(self, mode='minphase', max_boost_db=20):
+        if mode not in ('minphase', 'linphase'):
+            raise ValueError(
+                f"mode is {mode!r} but must be 'minphase' or 'linphase'.")
+        if (isinstance(max_boost_db, bool)
+                or not isinstance(max_boost_db, (int, float, np.number))):
+            raise TypeError(
+                "max_boost_db must be a number; got "
+                f"{type(max_boost_db).__name__}.")
+        if not np.isfinite(max_boost_db):
+            raise ValueError(
+                f"max_boost_db is {max_boost_db} but must be finite.")
+        self.mode = mode
+        self.max_boost_db = float(max_boost_db)
+
+    def __call__(self, signal, result: TimeResult | None = None):
+        """Equalize every channel of `signal` towards the pressure.
+
+        Parameters
+        ----------
+        signal : pyfar.Signal
+            Loudspeaker signals with as many samples as the pressure.
+        result : pyspar.parametric.TimeResult
+            Analysis the signals were rendered from; its pressure is the
+            spectral target.
+
+        Returns
+        -------
+        signal : pyfar.Signal
+            Equalized signals with the cshape of `signal` and 1023 samples
+            more for the tail of the filters.
+        """
+        if (not isinstance(signal, pf.Signal)
+                or isinstance(signal, SphericalHarmonicSignal)):
+            raise TypeError(
+                "SpectralEqualization requires a pyfar.Signal; got "
+                f"{type(signal).__name__}.")
+        if not isinstance(result, TimeResult):
+            raise TypeError(
+                "SpectralEqualization requires the "
+                "pyspar.parametric.TimeResult the signal was rendered "
+                f"from; got {type(result).__name__}.")
+        pressure = result.pressure.time[0]
+        if signal.n_samples != len(pressure):
+            raise ValueError(
+                f"The signal has {signal.n_samples} samples but the pressure "
+                f"of the result has {len(pressure)}.")
+
+        n = 2048                       # block length in samples
+        fs = signal.sampling_rate
+        feeds = np.asarray(signal.time, dtype=float).reshape(
+            -1, signal.n_samples).T                           # (N, channels)
+        n_samples, n_channels = feeds.shape
+        n_blocks = max(1, -(-n_samples // n))
+        pad = n_blocks * n - n_samples
+
+        # Consecutive blocks, the last one zero-padded: (n, n_blocks[, ch]).
+        target = pf.Signal(
+            np.pad(pressure, (0, pad)).reshape(n_blocks, n), fs).freq.T
+        blocks = np.pad(feeds, ((0, pad), (0, 0))).reshape(
+            n_blocks, n, n_channels).transpose(1, 0, 2)
+        spectra = np.moveaxis(pf.Signal(
+            np.moveaxis(blocks, 0, -1), fs).freq, -1, 0)
+        frequencies = pf.dsp.fft.rfftfreq(n, fs)
+        regularization = 1 / (2 * 10 ** (self.max_boost_db / 20))
+
+        out = np.zeros((n_blocks * n + n // 2 - 1, n_channels))
+        for ch in range(n_channels):
+            power = np.abs(spectra[..., ch]) ** 2
+            floor = power + (regularization ** 2) * np.mean(power, axis=0)
+            # Zero where the block is silent; those blocks are skipped below.
+            inverse = np.divide(target * np.conj(spectra[..., ch]), floor,
+                                out=np.zeros_like(target), where=floor > 0)
+            # Smoothed in third octaves.
+            smoothed = _smooth_log_frequency(inverse, frequencies, 3)
+            if self.mode == 'minphase':
+                # The cepstrum is sampled on the block length.
+                filters = pf.dsp.minimum_phase(
+                    pf.Signal(smoothed.T, fs, n, 'freq'), n_fft=n).time.T
+            else:
+                filters = pf.dsp.time_shift(pf.Signal(
+                    smoothed.T, fs, n, 'freq'), n // 4).time.T[:n // 2]
+
+            for k in range(n_blocks):
+                block = blocks[:, k, ch]
+                block = pf.Signal(block, fs)
+                energy = pf.dsp.energy(block)[0]
+                if energy == 0:
+                    continue
+                filtered = pf.dsp.convolve(
+                    pf.Signal(filters[:, k], fs), block, method='fft')
+                if pf.dsp.energy(filtered)[0] > 0:
+                    filtered = pf.dsp.normalize(
+                        filtered, reference_method='energy',
+                        target=energy).time[0]
+                else:
+                    filtered = block.time[0]
+                out[k * n:k * n + len(filtered), ch] += filtered
+
+        # The padding of the last block adds nothing beyond the tail.
+        out = out[:n_samples + n // 2 - 1]
+        return pf.Signal(out.T.reshape(signal.cshape + (-1,)), fs)
 
 
 class LoudspeakerSpectrumEqualization(Postprocessor):
@@ -43,6 +214,10 @@ class LoudspeakerSpectrumEqualization(Postprocessor):
         Frame length in periods of the lower band edge.
     max_boost_db : float
         Soft limit of the gain in dB.
+
+    See Also
+    --------
+    SpectralEqualization
 
     Notes
     -----

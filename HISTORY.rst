@@ -44,6 +44,10 @@ Added
   ``correction='loudspeaker_spectrum'`` of the loudspeaker and binaural
   synthesizers.
 * Each synthesizer accepts a correction only where it applies.
+* ``SpectralEqualization`` matching the spectrum of the loudspeaker signals to
+  that of the pressure over time with minimum- or linear-phase filters,
+  available as ``correction='minphase'`` or ``'linphase'`` of the
+  loudspeaker and binaural synthesizers.
 
 Changed
 ^^^^^^^

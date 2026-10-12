@@ -13,7 +13,10 @@ from pyspar import parametric
 
 @pytest.mark.parametrize(('correction', 'kind'), [
     (None, type(None)),
+    ('minphase', parametric.SpectralEqualization),
+    ('linphase', parametric.SpectralEqualization),
     ('loudspeaker_spectrum', parametric.LoudspeakerSpectrumEqualization),
+    (parametric.SpectralEqualization(), parametric.SpectralEqualization),
     (parametric.LoudspeakerSpectrumEqualization(),
      parametric.LoudspeakerSpectrumEqualization)])
 def test_loudspeaker_synthesizer_accepts(layout_horizontal, correction, kind):
@@ -33,7 +36,8 @@ def test_loudspeaker_spectrum_string_gives_the_default_equalizer(
 
 @pytest.mark.parametrize(('correction', 'error', 'match'), [
     ('flat', ValueError,
-     "correction is 'flat' but must be 'loudspeaker_spectrum'"),
+     "correction is 'flat' but must be 'minphase', 'linphase', "
+     "'loudspeaker_spectrum'"),
     (parametric.SpectralDecayCorrection(), ValueError,
      'corrects Ambisonic signals'),
     (0.5, TypeError, 'correction must be')])
@@ -48,6 +52,8 @@ def test_loudspeaker_synthesizer_rejects(layout_horizontal, correction,
 
 @pytest.mark.parametrize(('correction', 'kind'), [
     (None, type(None)),
+    ('minphase', parametric.SpectralEqualization),
+    ('linphase', parametric.SpectralEqualization),
     ('loudspeaker_spectrum', parametric.LoudspeakerSpectrumEqualization),
     (parametric.LoudspeakerSpectrumEqualization(),
      parametric.LoudspeakerSpectrumEqualization)])

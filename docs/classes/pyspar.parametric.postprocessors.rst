@@ -11,6 +11,7 @@ Postprocessors
 
    LoudspeakerSpectrumEqualization
    SpectralDecayCorrection
+   SpectralEqualization
 
 .. autoclass:: pyspar.parametric.LoudspeakerSpectrumEqualization
    :members:
@@ -18,6 +19,11 @@ Postprocessors
    :inherited-members:
 
 .. autoclass:: pyspar.parametric.SpectralDecayCorrection
+   :members:
+   :undoc-members:
+   :inherited-members:
+
+.. autoclass:: pyspar.parametric.SpectralEqualization
    :members:
    :undoc-members:
    :inherited-members:

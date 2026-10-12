@@ -13,7 +13,8 @@ from .classes import (
 from .analyzers import (
     PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
 from .postprocessors import (
-    LoudspeakerSpectrumEqualization, SpectralDecayCorrection)
+    LoudspeakerSpectrumEqualization, SpectralDecayCorrection,
+    SpectralEqualization)
 from .synthesizers import (
     AmbisonicSynthesizer, BinauralSynthesizer, LoudspeakerSynthesizer)
 from . import plot
@@ -29,6 +30,7 @@ __all__ = [
     'Postprocessor',
     'PseudoIntensityVectorAnalyzer',
     'SpectralDecayCorrection',
+    'SpectralEqualization',
     'SynthesizerBase',
     'TimeDifferenceOfArrivalAnalyzer',
     'TimeResult',
