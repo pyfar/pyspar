@@ -30,6 +30,10 @@ Added
   with the Ambisonic Spatial Decomposition Method, and ``passband`` on
   ``PseudoIntensityVectorAnalyzer`` estimating the directions from the
   band-passed signal.
+* ``pyspar.parametric.plot`` with ``doa_map``, ``spatio_temporal`` and
+  ``time_frequency``, plotting an analysis as a map of the directions of
+  arrival, as directional energy in growing time windows, and as spectra in
+  growing time windows.
 
 Changed
 ^^^^^^^

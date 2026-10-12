@@ -14,6 +14,7 @@ from .analyzers import (
     PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
 from .synthesizers import (
     AmbisonicSynthesizer, BinauralSynthesizer, LoudspeakerSynthesizer)
+from . import plot
 
 
 __all__ = [
@@ -21,6 +22,7 @@ __all__ = [
     'AnalyzerBase',
     'BinauralSynthesizer',
     'LoudspeakerSynthesizer',
+    'plot',
     'Postprocessor',
     'PseudoIntensityVectorAnalyzer',
     'SynthesizerBase',
