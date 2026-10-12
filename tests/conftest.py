@@ -157,7 +157,9 @@ def make_impulse_response():
 def make_dense_response():
     """First-order response with sound from a new direction at every sample.
 
-    Decaying noise over 3000 samples, a length that is not a power of two.
+    Decaying noise over 3000 samples: one block of the spectral equalization
+    and part of a second, with every loudspeaker of the test layouts sounding
+    in both.
     """
     rng = np.random.default_rng(21)
     n_samples = 3000

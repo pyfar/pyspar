@@ -8,7 +8,8 @@ from spharpy.spherical import spherical_harmonic_basis_real
 
 from .classes import SynthesizerBase, TimeResult
 from .postprocessors import (
-    LoudspeakerSpectrumEqualization, SpectralDecayCorrection)
+    LoudspeakerSpectrumEqualization, SpectralDecayCorrection,
+    SpectralEqualization)
 from pyspar.utils.directions import _nearest_directions, _replace_missing_doa
 
 
@@ -41,10 +42,13 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         Crossover frequency of the LFE channels in Hz. The default is ``80``.
     correction : str or pyspar.parametric.classes.Postprocessor, optional
         Equalization of the loudspeaker signals, applied after panning:
+        ``'minphase'`` or ``'linphase'`` for a
+        :class:`~pyspar.parametric.SpectralEqualization` with its default
+        settings, which adds 1023 samples to the signals;
         ``'loudspeaker_spectrum'`` for a
         :class:`~pyspar.parametric.LoudspeakerSpectrumEqualization` with its
-        default settings, or an instance of it. ``None``, the default,
-        applies none.
+        default settings; or an instance of one of these. Only one
+        equalization is applied. ``None``, the default, applies none.
 
     Notes
     -----
@@ -306,17 +310,22 @@ def _resolve_correction(correction):
         raise ValueError(
             "A pyspar.parametric.SpectralDecayCorrection corrects Ambisonic "
             "signals: use it with pyspar.parametric.AmbisonicSynthesizer.")
-    if correction is None or isinstance(correction,
-                                        LoudspeakerSpectrumEqualization):
+    if correction is None or isinstance(
+            correction, (SpectralEqualization,
+                         LoudspeakerSpectrumEqualization)):
         return correction
     if isinstance(correction, str):
-        if correction != 'loudspeaker_spectrum':
+        if correction == 'loudspeaker_spectrum':
+            return LoudspeakerSpectrumEqualization()
+        if correction not in ('minphase', 'linphase'):
             raise ValueError(
-                f"correction is {correction!r} but must be "
-                "'loudspeaker_spectrum', a correction instance or None.")
-        return LoudspeakerSpectrumEqualization()
+                f"correction is {correction!r} but must be 'minphase', "
+                "'linphase', 'loudspeaker_spectrum', a correction instance "
+                "or None.")
+        return SpectralEqualization(correction)
     raise TypeError(
         "correction must be a mode string, a "
+        "pyspar.parametric.SpectralEqualization, a "
         "pyspar.parametric.LoudspeakerSpectrumEqualization or None; got "
         f"{type(correction).__name__}.")
 
@@ -358,10 +367,16 @@ class BinauralSynthesizer(SynthesizerBase):
         ``'nls'``.
     correction : str or pyspar.parametric.classes.Postprocessor, optional
         Equalization of the loudspeaker signals, applied before the
-        convolution: ``'loudspeaker_spectrum'`` for a
-        :class:`~pyspar.parametric.LoudspeakerSpectrumEqualization` with its
-        default settings, or an instance of it, see
-        :class:`LoudspeakerSynthesizer`. The default is ``None``.
+        convolution, one of:
+
+        - ``'minphase'`` or ``'linphase'`` for a
+          :class:`~pyspar.parametric.SpectralEqualization`, see
+          :class:`LoudspeakerSynthesizer`;
+        - ``'loudspeaker_spectrum'`` for a
+          :class:`~pyspar.parametric.LoudspeakerSpectrumEqualization`;
+        - an instance of one of these.
+
+        Only one equalization is applied. The default is ``None``.
 
     Notes
     -----
