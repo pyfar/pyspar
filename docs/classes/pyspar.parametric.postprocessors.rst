@@ -10,10 +10,16 @@ Postprocessors
 .. autosummary::
 
    LoudspeakerSpectrumEqualization
+   RoughnessCompensation
    SpectralDecayCorrection
    SpectralEqualization
 
 .. autoclass:: pyspar.parametric.LoudspeakerSpectrumEqualization
+   :members:
+   :undoc-members:
+   :inherited-members:
+
+.. autoclass:: pyspar.parametric.RoughnessCompensation
    :members:
    :undoc-members:
    :inherited-members:

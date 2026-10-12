@@ -5,6 +5,21 @@ from scipy.interpolate import PchipInterpolator
 from scipy.signal import filtfilt
 
 
+def _schroeder_allpass(delay, decay_t60, sampling_rate):
+    """Schroeder allpass as a pyfar.FilterIIR.
+
+    ``y[n] = g x[n] + x[n - delay] - g y[n - delay]`` with
+    ``g = 10^(-3 delay / (sampling_rate decay_t60))``, for which the impulse
+    response decays by 60 dB in `decay_t60`.
+    """
+    gain = 10 ** (-60 * delay / (sampling_rate * decay_t60) / 20)
+    b = np.zeros(delay + 1)
+    a = np.zeros(delay + 1)
+    b[0], b[delay] = gain, 1.0
+    a[0], a[delay] = 1.0, gain
+    return pf.FilterIIR([b, a], sampling_rate)
+
+
 def _smooth_log_frequency(spectra, frequencies, num_fractions):
     """Smooth magnitude spectra on a logarithmic frequency axis.
 

@@ -252,6 +252,10 @@ def noise_between_silences():
         signal=pf.Signal(pressure, 48000))
 
 
+# Seed of the velvet sequences.
+ROUGHNESS_SEED = 3
+
+
 @pytest.fixture
 def layout_horizontal():
     """ITU-R BS.775 5.0 layout, all loudspeakers on the horizon."""
@@ -315,3 +319,35 @@ def delta_hrirs():
     data = np.zeros((26, 2, 8))
     data[:, :, 0] = 1.0
     return pf.Signal(data, 48000), hrir_grid()
+
+
+def impulse_response_start(pressure, sampling_rate=48000):
+    """Start sample of `pressure` as pyspar takes it for its late part.
+
+    The last sample 30 dB below the peak before it, by
+    :func:`pyfar.dsp.find_impulse_response_start`, and zero where the
+    first sample is already within 30 dB.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter('ignore')
+        start = pf.dsp.find_impulse_response_start(
+            pf.Signal(pressure, sampling_rate), threshold=30)
+    return max(int(np.ravel(start)[0]), 0)
+
+
+def make_mixing_response():
+    """Pressure with sparse reflections that turn into a noise tail.
+
+    A direct sound after 5 ms, eight reflections within 25 ms and decaying
+    noise from then on: the echo density reaches that of noise shortly after
+    the tail sets in, which gives a mixing time unlike the dense response,
+    which is noise from its first sample.
+    """
+    rng = np.random.default_rng(41)
+    n_samples = 6000
+    pressure = np.zeros(n_samples)
+    pressure[240] = 1.0
+    pressure[np.sort(rng.integers(300, 1200, 8))] = rng.uniform(0.2, 0.6, 8)
+    pressure[1200:] = (rng.standard_normal(n_samples - 1200) * 0.1
+                       * np.exp(-np.arange(n_samples - 1200) / 1500))
+    return pressure

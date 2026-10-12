@@ -9,7 +9,234 @@ from spharpy import SphericalHarmonicSignal
 
 from .classes import TimeResult, Postprocessor
 from pyspar.utils.spherical_harmonics import _check_sh_input
-from pyspar.utils.dsp import _smooth_log_frequency
+from pyspar.utils.dsp import _schroeder_allpass, _smooth_log_frequency
+from pyspar.utils import room_acoustics
+
+
+class RoughnessCompensation(Postprocessor):
+    """Smooth the sparse loudspeaker signals of nearest-loudspeaker panning.
+
+    Filters the late part, from the mixing time on by default, of every
+    loudspeaker signal of the nearest loudspeaker synthesis [#]_ with a short
+    decaying filter:
+
+    ``'schroeder'``
+        Three Schroeder allpasses [#]_ in series with delays of 37, 113 and
+        215 samples at 48 kHz [#]_, scaled with the sampling rate. Their
+        magnitude response is flat.
+    ``'velvet'``
+        A random sequence of +-1 under an exponential decay, drawn
+        independently for every loudspeaker and normalized to unit energy.
+
+    The filters decay by 60 dB in `decay_t60`, and the signals keep their
+    length.
+
+    Parameters
+    ----------
+    mode : ``'schroeder'``, ``'velvet'``, optional
+        Compensation filter. The default is ``'schroeder'``.
+    decay_t60 : float, optional
+        Time in seconds in which the filter decays by 60 dB. The velvet
+        filter is twice as long. The default is ``0.05``.
+    seed : int, optional
+        Seed of :func:`numpy.random.default_rng` for the velvet sequences.
+        ``None``, the default, draws new sequences on every call; pass an
+        integer for reproducible results.
+    start : str or float, optional
+        Start of the late part. ``'mixing_time'``, the default, estimates
+        the mixing time of the pressure from its echo density, see Notes.
+        ``'onset'`` filters from the start of the impulse response on, the
+        direct sound included. A number gives the time in seconds after the
+        start of the impulse response.
+
+    Notes
+    -----
+    The signals are crossfaded over the 128 samples before the late part, the
+    rising half of a Hann window of 256 samples: the late part fades in and is
+    filtered, the early part fades out unfiltered, and the samples before the
+    crossfade are unchanged. The mixing time is estimated from the echo density
+    of the pressure and counted from the last sample 30 dB below its peak, as
+    :func:`pyfar.dsp.find_impulse_response_start` finds it. If the echo density
+    never reaches that of noise, nothing is applied, with a warning. A late
+    part that begins after the end of the pressure applies nothing, with a
+    warning. The velvet sequences are drawn loudspeaker by loudspeaker.
+
+    References
+    ----------
+    .. [#] S. Tervo, J. Patynen, N. Kaplanis, M. Lydolf, S. Bech and T.
+           Lokki, "Spatial analysis and synthesis of car audio system and
+           car cabin acoustics with a compact microphone array," J. Audio
+           Eng. Soc., vol. 63, no. 11, pp. 914-925, 2015.
+    .. [#] M. R. Schroeder and B. F. Logan, "'Colorless' artificial
+           reverberation," J. Audio Eng. Soc., vol. 9, no. 3, pp. 192-197,
+           1961.
+    .. [#] S. V. Amengual Gari, J. M. Arend, P. T. Calamia and P. W.
+           Robinson, "Optimizations of the spatial decomposition method for
+           binaural reproduction," J. Audio Eng. Soc., vol. 68, no. 12,
+           pp. 959-976, 2020.
+
+    Examples
+    --------
+    Smooth the late part of a rendering from its mixing time on.
+
+    >>> import numpy as np
+    >>> import pyfar as pf
+    >>> import pyspar
+    >>> from spharpy import SphericalHarmonicSignal
+    >>> rng = np.random.default_rng(0)
+    >>> data = rng.standard_normal((4, 9600)) * np.exp(-np.arange(9600) / 2400)
+    >>> data[:, :240] = 0
+    >>> data[0, 240] = 10
+    >>> signal = SphericalHarmonicSignal(data, 48000, 'real', 'N3D', 'ACN',
+    ...                                  False)
+    >>> loudspeakers = pf.Coordinates.from_spherical_elevation(
+    ...     np.deg2rad([0, 30, -30, 110, -110]), 0, 1)
+    >>> result = pyspar.parametric.PseudoIntensityVectorAnalyzer(
+    ...     window_length=5)(signal)
+    >>> feeds = pyspar.parametric.LoudspeakerSynthesizer(loudspeakers)(result)
+    >>> smoothed = pyspar.parametric.RoughnessCompensation()(feeds, result)
+    >>> smoothed.cshape, smoothed.n_samples
+    ((5,), 9600)
+    """
+
+    stage = 'loudspeaker'
+
+    def __init__(self, mode='schroeder', decay_t60=0.05, seed=None,
+                 start='mixing_time'):
+        if mode not in ('schroeder', 'velvet'):
+            raise ValueError(
+                f"mode is {mode!r} but must be 'schroeder' or 'velvet'.")
+        if (isinstance(decay_t60, bool)
+                or not isinstance(decay_t60, (int, float, np.number))):
+            raise TypeError(
+                "decay_t60 must be a number; got "
+                f"{type(decay_t60).__name__}.")
+        if not decay_t60 > 0:
+            raise ValueError(
+                f"decay_t60 is {decay_t60} but must be positive.")
+        self._mode = mode
+        self._decay_t60 = float(decay_t60)
+        self._seed = seed
+        self._start = _check_start(start)
+
+    @property
+    def mode(self):
+        """Get the compensation filter."""
+        return self._mode
+
+    @property
+    def decay_t60(self):
+        """Get the decay time of the filter in seconds."""
+        return self._decay_t60
+
+    @property
+    def seed(self):
+        """Get the seed of the velvet sequences."""
+        return self._seed
+
+    @property
+    def start(self):
+        """Get the start of the late part, as given, a number as a float."""
+        return self._start
+
+    def __call__(self, signal, result: TimeResult | None = None):
+        """Filter the late part of every channel of `signal`.
+
+        Parameters
+        ----------
+        signal : pyfar.Signal
+            Loudspeaker signals, one channel per loudspeaker, with at least
+            as many samples as the pressure; samples after its end belong to
+            the late part.
+        result : pyspar.parametric.TimeResult
+            Analysis the signals were rendered from; its pressure sets the
+            onset and the mixing time.
+
+        Returns
+        -------
+        signal : pyfar.Signal
+            Compensated signals with the cshape and length of `signal`.
+        """
+        if (not isinstance(signal, pf.Signal)
+                or isinstance(signal, SphericalHarmonicSignal)):
+            raise TypeError(
+                "RoughnessCompensation requires a pyfar.Signal; got "
+                f"{type(signal).__name__}.")
+        if not isinstance(result, TimeResult):
+            raise TypeError(
+                "RoughnessCompensation requires the "
+                "pyspar.parametric.TimeResult the signal was rendered "
+                f"from; got {type(result).__name__}.")
+        fs = signal.sampling_rate
+        if abs(fs - result.sampling_rate) > 0.5:
+            raise ValueError(
+                f"The signal sampling_rate ({fs} Hz) does not match the "
+                f"result ({result.sampling_rate} Hz).")
+        pressure = result.pressure.time[0]
+        n_samples = signal.n_samples
+        if n_samples < len(pressure):
+            raise ValueError(
+                f"The signal has {n_samples} samples but the pressure of "
+                f"the result has {len(pressure)}; it needs at least as many.")
+
+        start = {'mixing_time': None, 'onset': 0.0}.get(self.start, self.start)
+        window = room_acoustics.mixing_time_crossfade(pressure, fs, start)
+        if window is None:
+            # No mixing time, or a late part after the end of the pressure.
+            return signal.copy()
+        # Samples after the end of the pressure belong to the late part.
+        window = np.pad(window, (0, n_samples - len(pressure)),
+                        constant_values=1.0)
+        data = np.asarray(signal.time, dtype=float).reshape(-1, n_samples)
+        # Filtered from the first sample of the fade, so that the samples
+        # before it stay exactly as they are.
+        first = int(np.argmax(window > 0))
+        late = pf.Signal(data[:, first:] * window[first:], fs)
+        if self.mode == 'schroeder':
+            filtered = late
+            # Delays at 48 kHz, scaled with the sampling rate.
+            for delay in (37, 113, 215):
+                filtered = _schroeder_allpass(
+                    max(1, round(delay * fs / 48000)), self.decay_t60,
+                    fs).process(filtered)
+        else:
+            filtered = self._velvet(late)
+        out = data.copy()
+        out[:, first:] = (out[:, first:] - late.time
+                          + filtered.time[:, :late.n_samples])
+
+        return pf.Signal(out.reshape(signal.cshape + (-1,)), fs)
+
+    def _velvet(self, feeds):
+        """Convolve every channel with its own velvet filter."""
+        fs = feeds.sampling_rate
+        n_taps = round(self.decay_t60 * 2 * fs)
+        tau = -self.decay_t60 / np.log(1e-3) * fs
+        envelope = np.exp(-np.arange(n_taps) / tau)
+        rng = np.random.default_rng(self.seed)
+        signs = rng.integers(0, 2, size=(feeds.cshape[0], n_taps)) * 2 - 1
+        return pf.dsp.convolve(
+            feeds, pf.dsp.normalize(pf.Signal(signs * envelope, fs),
+                                    reference_method='energy'), method='fft')
+
+
+def _check_start(start):
+    """Validate the start of the late part, a number as a float."""
+    if isinstance(start, str):
+        if start not in ('mixing_time', 'onset'):
+            raise ValueError(
+                f"start is {start!r} but must be 'mixing_time', 'onset' or "
+                "a number of seconds.")
+        return start
+    if (isinstance(start, bool)
+            or not isinstance(start, (int, float, np.number))):
+        raise TypeError(
+            "start must be 'mixing_time', 'onset' or a number of seconds; "
+            f"got {type(start).__name__}.")
+    if not np.isfinite(start) or start < 0:
+        raise ValueError(
+            f"start is {start} but must be a non-negative time in seconds.")
+    return float(start)
 
 
 class SpectralEqualization(Postprocessor):
