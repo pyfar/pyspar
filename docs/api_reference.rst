@@ -19,6 +19,7 @@ Classes
    classes/pyspar.parametric.classes
    classes/pyspar.parametric.analyzers
    classes/pyspar.parametric.synthesizers
+   classes/pyspar.parametric.postprocessors
 
 Modules
 -------

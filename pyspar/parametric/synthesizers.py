@@ -7,6 +7,7 @@ from spharpy import SphericalHarmonicSignal
 from spharpy.spherical import spherical_harmonic_basis_real
 
 from .classes import SynthesizerBase, TimeResult
+from .postprocessors import SpectralDecayCorrection
 from pyspar.utils.directions import _nearest_directions, _replace_missing_doa
 
 
@@ -513,6 +514,11 @@ class AmbisonicSynthesizer(SynthesizerBase):
         Upmixing method. Only the standard ASDM is currently implemented.
     normalization : ``'N3D'``, ``'SN3D'``, optional
         Normalization of the output. The default is ``'N3D'``.
+    spectral_decay_correction : bool, optional
+        Match the energy decay of every order to that of the analyzed
+        signal in third-octave bands, see
+        :class:`~pyspar.parametric.SpectralDecayCorrection`. The default is
+        ``True``.
 
     Attributes
     ----------
@@ -522,11 +528,15 @@ class AmbisonicSynthesizer(SynthesizerBase):
         Upmixing method in use.
     normalization : str
         Normalization of the output.
+    spectral_decay_correction : bool
+        Whether the spectral decay correction is applied.
 
     Notes
     -----
-    The omnidirectional channel of the output equals the pressure of the
-    analysis at every order.
+    The spectral decay correction is that of
+    :class:`~pyspar.parametric.SpectralDecayCorrection`, applied to the upmixed
+    signal before it is returned. Without it, the omnidirectional channel of
+    the output equals the pressure of the analysis at every order.
 
     References
     ----------
@@ -549,7 +559,8 @@ class AmbisonicSynthesizer(SynthesizerBase):
     (3, 'N3D')
     """
 
-    def __init__(self, order, method='asdm', normalization='N3D'):
+    def __init__(self, order, method='asdm', normalization='N3D',
+                 spectral_decay_correction=True):
         if (isinstance(order, bool)
                 or not isinstance(order, (int, np.integer))):
             raise TypeError(
@@ -563,10 +574,15 @@ class AmbisonicSynthesizer(SynthesizerBase):
             raise ValueError(
                 f"normalization is '{normalization}' but must be 'N3D' or "
                 "'SN3D'.")
+        if not isinstance(spectral_decay_correction, (bool, np.bool_)):
+            raise TypeError(
+                "spectral_decay_correction must be True or False; got "
+                f"{spectral_decay_correction!r}.")
 
         self.order = int(order)
         self.method = method
         self.normalization = normalization
+        self.spectral_decay_correction = bool(spectral_decay_correction)
 
     def __call__(self, result: TimeResult) -> SphericalHarmonicSignal:
         """Upmix `result` to a higher-order Ambisonic signal.
@@ -587,7 +603,6 @@ class AmbisonicSynthesizer(SynthesizerBase):
                 "AmbisonicSynthesizer requires a "
                 "pyspar.parametric.TimeResult; got "
                 f"{type(result).__name__}.")
-
         doa = _replace_missing_doa(result.doa, result.pressure.time[0])
         basis = spherical_harmonic_basis_real(
             self.order, doa, normalization=self.normalization)
@@ -596,6 +611,9 @@ class AmbisonicSynthesizer(SynthesizerBase):
         # pressure.
         data = (result.pressure.time[0] / basis[:, 0])[:, None] * basis
 
-        return SphericalHarmonicSignal(
+        signal = SphericalHarmonicSignal(
             data.T, result.sampling_rate, 'real', self.normalization, 'ACN',
             False)
+        if self.spectral_decay_correction:
+            signal = SpectralDecayCorrection()(signal, result)
+        return signal

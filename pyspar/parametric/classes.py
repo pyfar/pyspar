@@ -145,12 +145,12 @@ class SynthesizerBase(ABC):
 
 
 class Postprocessor(ABC):
-    """Abstract base class of the equalizers.
+    """Abstract base class of the corrections.
 
     Attributes
     ----------
     stage : str
-        Signal domain the equalizer acts on, fixed by each subclass:
+        Signal domain the correction acts on, fixed by each subclass:
         ``'loudspeaker'`` for corrections applied to the loudspeaker feeds,
         which run inside a synthesizer, and ``'output'`` for methods defined
         on the rendered signal.

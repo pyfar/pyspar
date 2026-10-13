@@ -34,6 +34,10 @@ Added
   ``time_frequency``, plotting an analysis as a map of the directions of
   arrival, as directional energy in growing time windows, and as spectra in
   growing time windows.
+* ``SpectralDecayCorrection``, the spectral decay correction of ASDM
+  upmixing, matching the third-octave energy decay of every order to that
+  of the analyzed signal, applied by ``AmbisonicSynthesizer`` unless
+  ``spectral_decay_correction=False``.
 
 Changed
 ^^^^^^^
