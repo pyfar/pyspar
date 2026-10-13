@@ -38,7 +38,12 @@ def sh_basis_direct(order, azimuth, elevation):
 
 
 def encoded(result, order, **kwargs):
-    """Ambisonic time data as ``(n_samples, n_coefficients)``."""
+    """Ambisonic time data as ``(n_samples, n_coefficients)``.
+
+    Without the spectral decay correction, which test_spectral_decay.py
+    covers.
+    """
+    kwargs.setdefault('spectral_decay_correction', False)
     signal = parametric.AmbisonicSynthesizer(order, **kwargs)(result)
     return np.asarray(signal.time)[0].T
 
@@ -133,7 +138,10 @@ def test_tdoa_analysis_encodes_to_ambisonics(array_response, microphones):
     result = parametric.TimeDifferenceOfArrivalAnalyzer(
         microphones, reference_channel=4)(array_response)
 
-    encoded = parametric.AmbisonicSynthesizer(3)(result)
+    # Without the spectral decay correction, which changes the
+    # omnidirectional channel slightly.
+    encoded = parametric.AmbisonicSynthesizer(
+        3, spectral_decay_correction=False)(result)
 
     # The image-source distances of TDOA do not leak into the encoding.
     npt.assert_allclose(np.asarray(encoded.time)[0, 0],
@@ -149,6 +157,7 @@ def test_default_parameters():
     assert synthesizer.order == 3
     assert synthesizer.method == 'asdm'
     assert synthesizer.normalization == 'N3D'
+    assert synthesizer.spectral_decay_correction is True
 
 
 def test_order_accepts_numpy_integers():

@@ -152,6 +152,29 @@ def make_impulse_response():
     return encode(pressure, directions)
 
 
+def make_dense_response():
+    """First-order response with sound from a new direction at every sample.
+
+    Decaying noise over 3000 samples, a length that is not a power of two.
+    """
+    rng = np.random.default_rng(21)
+    n_samples = 3000
+    pressure = (rng.standard_normal(n_samples)
+                * np.exp(-np.arange(n_samples) / 1500))
+    directions = pf.Coordinates.from_spherical_elevation(
+        rng.uniform(-np.pi, np.pi, n_samples),
+        np.arcsin(rng.uniform(-1, 1, n_samples)), np.ones(n_samples))
+    return encode(pressure, directions)
+
+
+@pytest.fixture
+def dense_analysis():
+    """Analysis of the dense response with a 5-sample window."""
+    from pyspar import parametric
+    return parametric.PseudoIntensityVectorAnalyzer(window_length=5)(
+        make_dense_response())
+
+
 @pytest.fixture
 def impulse_response():
     """First-order impulse response: direct sound, reflections, tail."""
