@@ -7,6 +7,12 @@ History
 
 Added
 ^^^^^
+* Subpackage ``pyspar.parametric`` for parametric rendering, with the base
+  classes of its processing chain, ``AnalyzerBase``, ``SynthesizerBase``
+  and ``Postprocessor``, and the analysis result ``TimeResult``.
+* ``PseudoIntensityVectorAnalyzer`` estimating one direction of arrival per
+  sample from the pseudo-intensity vector of a first-order signal, smoothed
+  by a centred Hann window of odd length.
 
 Changed
 ^^^^^^^
