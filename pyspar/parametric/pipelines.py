@@ -1,7 +1,8 @@
 """Pipelines chaining an analyzer, a synthesizer and equalizers."""
 from __future__ import annotations
 
-from .analyzers import PseudoIntensityVectorAnalyzer
+from .analyzers import (
+    PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
 from .classes import AnalyzerBase, Postprocessor, SynthesizerBase
 from .synthesizers import BinauralSynthesizer, LoudspeakerSynthesizer
 
@@ -83,25 +84,57 @@ class SDMPipeline:
         return rendered
 
 
-def sdm_loudspeakers(signal, loudspeakers, *, window_length, panning='nls',
-                     dimensionality=3, lfe_channels=None, lfe_cutoff=80):
+def _sdm_analyzer(window_length, microphones, reference_channel):
+    """Return the SDM analyzer selected by `microphones`."""
+    if microphones is None:
+        if reference_channel is not None:
+            raise ValueError(
+                "reference_channel selects a capsule of microphones; "
+                "without microphones it does not apply.")
+        return PseudoIntensityVectorAnalyzer(window_length=window_length)
+    return TimeDifferenceOfArrivalAnalyzer(
+        microphones, reference_channel, window_length=window_length)
+
+
+def sdm_loudspeakers(signal, loudspeakers, *, window_length, microphones=None,
+                     reference_channel=None, panning='nls', dimensionality=3,
+                     lfe_channels=None, lfe_cutoff=80):
     """Render a measured impulse response to loudspeakers with SDM.
 
-    Analysis and rendering in one call; for several renders of the same
+    Analysis and rendering in one call. The analysis is selected by
+    `microphones`: without them, `signal` is a spherical harmonic signal
+    analyzed by its pseudo-intensity vector; with them, it holds the capsule
+    signals, analyzed by time differences of arrival with
+    `reference_channel` as the pressure. For several renders of the same
     measurement, analyze once with a
-    :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer` and reuse the
+    :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer` or
+    :class:`~pyspar.parametric.TimeDifferenceOfArrivalAnalyzer` and reuse the
     result.
 
     Parameters
     ----------
-    signal : spharpy.SphericalHarmonicSignal
-        Measured impulse response, a spherical harmonic signal of order one
-        or higher. Its sampling rate configures the analysis.
+    signal : spharpy.SphericalHarmonicSignal, pyfar.Signal
+        Measured impulse response: a spherical harmonic signal of order one
+        or higher, or with `microphones` the capsule signals. Its sampling
+        rate configures the analysis.
     loudspeakers : pyfar.Coordinates
         Loudspeaker directions.
-    window_length : int
-        Window of the analysis, in samples, see
-        :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer`.
+    window_length : int or None
+        Window of the analysis, in samples: the odd smoothing window of the
+        pseudo-intensity vector for a spherical harmonic signal (typically
+        1 to 15 samples) or, with `microphones`, the even analysis frame of
+        the time differences of arrival, ``None`` for the minimum of the
+        array. See :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer`
+        and :class:`~pyspar.parametric.TimeDifferenceOfArrivalAnalyzer`.
+    microphones : pyfar.Coordinates, optional
+        Capsule positions of an open microphone array, one per channel of
+        `signal`, which is then analyzed by its time differences of arrival.
+        ``None``, the default, analyzes a spherical harmonic signal by its
+        pseudo-intensity vector.
+    reference_channel : int, optional
+        Capsule of `microphones` whose signal is taken as the pressure,
+        required with `microphones`, see
+        :class:`~pyspar.parametric.TimeDifferenceOfArrivalAnalyzer`.
     panning : ``'nls'``, optional
         Panning law, see :class:`~pyspar.parametric.LoudspeakerSynthesizer`.
         The default is ``'nls'``.
@@ -122,7 +155,7 @@ def sdm_loudspeakers(signal, loudspeakers, *, window_length, panning='nls',
         Loudspeaker signals with ``cshape (n_loudspeakers,)``.
     """
     pipeline = SDMPipeline(
-        PseudoIntensityVectorAnalyzer(window_length=window_length),
+        _sdm_analyzer(window_length, microphones, reference_channel),
         LoudspeakerSynthesizer(loudspeakers, panning=panning,
                                dimensionality=dimensionality,
                                lfe_channels=lfe_channels,
@@ -131,27 +164,46 @@ def sdm_loudspeakers(signal, loudspeakers, *, window_length, panning='nls',
 
 
 def sdm_binaural(signal, hrirs, hrir_directions, *, window_length,
+                 microphones=None, reference_channel=None,
                  virtual_loudspeakers=None, panning='nls', dimensionality=3):
     """Render a measured impulse response to binaural signals with SDM.
 
-    Analysis and rendering in one call; for several renders of the same
+    Analysis and rendering in one call. The analysis is selected by
+    `microphones`: without them, `signal` is a spherical harmonic signal
+    analyzed by its pseudo-intensity vector; with them, it holds the capsule
+    signals, analyzed by time differences of arrival with
+    `reference_channel` as the pressure. For several renders of the same
     measurement, analyze once with a
-    :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer` and reuse the
+    :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer` or
+    :class:`~pyspar.parametric.TimeDifferenceOfArrivalAnalyzer` and reuse the
     result.
 
     Parameters
     ----------
-    signal : spharpy.SphericalHarmonicSignal
-        Measured impulse response, a spherical harmonic signal of order one
-        or higher. Its sampling rate configures the analysis and must match
-        that of `hrirs`.
+    signal : spharpy.SphericalHarmonicSignal, pyfar.Signal
+        Measured impulse response: a spherical harmonic signal of order one
+        or higher, or with `microphones` the capsule signals. Its sampling
+        rate configures the analysis and must match that of `hrirs`.
     hrirs : pyfar.Signal
         Head-related impulse responses, ``cshape (n_directions, 2)``.
     hrir_directions : pyfar.Coordinates
         Measurement directions of `hrirs`.
-    window_length : int
-        Window of the analysis, in samples, see
-        :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer`.
+    window_length : int or None
+        Window of the analysis, in samples: the odd smoothing window of the
+        pseudo-intensity vector for a spherical harmonic signal (typically
+        1 to 15 samples) or, with `microphones`, the even analysis frame of
+        the time differences of arrival, ``None`` for the minimum of the
+        array. See :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer`
+        and :class:`~pyspar.parametric.TimeDifferenceOfArrivalAnalyzer`.
+    microphones : pyfar.Coordinates, optional
+        Capsule positions of an open microphone array, one per channel of
+        `signal`, which is then analyzed by its time differences of arrival.
+        ``None``, the default, analyzes a spherical harmonic signal by its
+        pseudo-intensity vector.
+    reference_channel : int, optional
+        Capsule of `microphones` whose signal is taken as the pressure,
+        required with `microphones`, see
+        :class:`~pyspar.parametric.TimeDifferenceOfArrivalAnalyzer`.
     virtual_loudspeakers : pyfar.Coordinates, optional
         Loudspeaker layout that selects a subset of the measurement grid, see
         :class:`~pyspar.parametric.BinauralSynthesizer`. ``None``, the default,
@@ -167,7 +219,7 @@ def sdm_binaural(signal, hrirs, hrir_directions, *, window_length,
         Left and right ear signals, ``cshape (2,)``.
     """
     pipeline = SDMPipeline(
-        PseudoIntensityVectorAnalyzer(window_length=window_length),
+        _sdm_analyzer(window_length, microphones, reference_channel),
         BinauralSynthesizer(hrirs, hrir_directions,
                             virtual_loudspeakers=virtual_loudspeakers,
                             panning=panning, dimensionality=dimensionality))

@@ -254,6 +254,22 @@ def test_sdm_binaural_equals_the_two_stages(impulse_response, hrir_set):
     npt.assert_array_equal(rendered.time, expected.time)
 
 
+@pytest.mark.filterwarnings('ignore:.*samples have no direction')
+def test_sdm_binaural_with_microphones_equals_the_two_stages(
+        array_response, microphones, hrir_set):
+    hrirs, directions = hrir_set
+
+    rendered = parametric.sdm_binaural(array_response, hrirs, directions,
+                                       window_length=40,
+                                       microphones=microphones,
+                                       reference_channel=4)
+
+    result = parametric.TimeDifferenceOfArrivalAnalyzer(
+        microphones, reference_channel=4, window_length=40)(array_response)
+    expected = parametric.BinauralSynthesizer(hrirs, directions)(result)
+    npt.assert_array_equal(rendered.time, expected.time)
+
+
 def test_sdm_binaural_renders_on_given_loudspeakers(impulse_response,
                                                     hrir_set):
     hrirs, directions = hrir_set

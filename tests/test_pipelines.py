@@ -140,6 +140,49 @@ def test_sdm_loudspeakers_takes_the_sampling_rate_from_the_signal(
     assert rendered.sampling_rate == 44100
 
 
+@pytest.mark.filterwarnings('ignore:.*samples have no direction')
+def test_sdm_loudspeakers_with_microphones_equals_the_two_stages(
+        array_response, microphones, layout_surround):
+    rendered = parametric.sdm_loudspeakers(
+        array_response, layout_surround, window_length=40,
+        microphones=microphones, reference_channel=4)
+
+    result = parametric.TimeDifferenceOfArrivalAnalyzer(
+        microphones, reference_channel=4, window_length=40)(array_response)
+    expected = parametric.LoudspeakerSynthesizer(layout_surround)(result)
+    npt.assert_array_equal(rendered.time, expected.time)
+
+
+def test_sdm_loudspeakers_error_if_microphones_are_given_for_a_sh_signal(
+        impulse_response, microphones, layout_surround):
+    with pytest.raises(TypeError, match='requires the capsule signals'):
+        parametric.sdm_loudspeakers(impulse_response, layout_surround,
+                                    window_length=3, microphones=microphones,
+                                    reference_channel=4)
+
+
+def test_sdm_loudspeakers_error_if_capsule_signals_come_without_microphones(
+        array_response, layout_surround):
+    with pytest.raises(TypeError, match='requires a spharpy'):
+        parametric.sdm_loudspeakers(array_response, layout_surround,
+                                    window_length=3)
+
+
+def test_sdm_loudspeakers_error_for_a_reference_channel_without_microphones(
+        impulse_response, layout_surround):
+    with pytest.raises(ValueError, match='without microphones'):
+        parametric.sdm_loudspeakers(impulse_response, layout_surround,
+                                    window_length=3, reference_channel=4)
+
+
+def test_sdm_loudspeakers_error_if_microphones_come_without_a_capsule(
+        array_response, microphones, layout_surround):
+    with pytest.raises(TypeError,
+                       match='reference_channel must be an integer; got None'):
+        parametric.sdm_loudspeakers(array_response, layout_surround,
+                                    window_length=40, microphones=microphones)
+
+
 def test_sdm_loudspeakers_error_if_the_input_is_an_array(layout_surround):
     with pytest.raises(TypeError, match='requires a spharpy'):
         parametric.sdm_loudspeakers(np.zeros((64, 4)), layout_surround,

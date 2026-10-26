@@ -40,6 +40,69 @@ def encode(pressure, direction, n_max=1, normalization='N3D'):
     return sh_signal(data.T, normalization=normalization)
 
 
+def delayed_impulses(delays, n_samples, sampling_rate=48000):
+    """Unit impulses delayed by `delays` seconds, ``(n_samples, len(delays))``.
+
+    Fractional delays are applied as a linear phase, so the impulses are band
+    limited rather than rounded to the nearest sample.
+    """
+    frequencies = np.fft.rfftfreq(n_samples, 1 / sampling_rate)
+    phase = np.exp(-2j * np.pi * frequencies[:, None]
+                   * np.asarray(delays)[None, :])
+    return np.fft.irfft(phase, n=n_samples, axis=0)
+
+
+def octahedron(radius):
+    """Six capsules on the axes at `radius`: +x, -x, +y, -y, +z, -z."""
+    xyz = radius * np.array([[1, 0, 0], [-1, 0, 0], [0, 1, 0],
+                             [0, -1, 0], [0, 0, 1], [0, 0, -1]], float)
+    return pf.Coordinates(*xyz.T)
+
+
+# The time-difference-of-arrival analysis uses pyfar's speed of sound.
+SPEED_OF_SOUND = pf.constants.reference_speed_of_sound
+
+# Capsules 4 samples from the centre at 48 kHz, so that a plane wave along an
+# axis arrives with whole-sample delays.
+OCTAHEDRON_RADIUS = 4 * SPEED_OF_SOUND / 48000
+
+
+@pytest.fixture
+def microphones():
+    """Octahedral array with whole-sample delays along the axes."""
+    return octahedron(OCTAHEDRON_RADIUS)
+
+
+def make_array_response(microphones):
+    """Capsule signals of a direct sound, reflections and a decaying tail.
+
+    Each arrival is a plane wave with exact fractional delays per capsule.
+    """
+    rng = np.random.default_rng(11)
+    n_samples, fs, c = 600, 48000, SPEED_OF_SOUND
+    positions = microphones.cartesian
+    data = np.zeros((n_samples, len(positions)))
+
+    times = np.concatenate([[80], rng.uniform(120, 380, 8)])
+    gains = np.concatenate([[1.0], rng.uniform(0.2, 0.6, 8)])
+    for time, gain in zip(times, gains, strict=True):
+        direction = rng.standard_normal(3)
+        direction /= np.linalg.norm(direction)
+        delays = time / fs - positions @ direction / c
+        data += gain * delayed_impulses(delays, n_samples, fs)
+
+    tail = slice(400, n_samples)
+    data[tail] += (rng.standard_normal((n_samples - 400, len(positions)))
+                   * 0.02 * np.exp(-np.arange(n_samples - 400) / 60)[:, None])
+    return pf.Signal(data.T, fs)
+
+
+@pytest.fixture
+def array_response(microphones):
+    """Capsule signals of a direct sound, reflections and a decaying tail."""
+    return make_array_response(microphones)
+
+
 @pytest.fixture
 def sampling_rate():
     """Sampling rate used throughout the tests."""

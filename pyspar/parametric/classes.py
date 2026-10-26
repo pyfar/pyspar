@@ -34,7 +34,8 @@ class TimeResult:
     signal : pyfar.Signal
         The analyzed signal, kept for synthesizers that need more than the
         pressure: the first-order spharpy.SphericalHarmonicSignal in ACN/N3D
-        for the pseudo-intensity vector.
+        for the pseudo-intensity vector, the capsule signals for time
+        differences of arrival.
     doa : pyfar.Coordinates, cshape (n_samples,)
         Direction of arrival per sample of `pressure`; samples without a
         direction are NaN.
