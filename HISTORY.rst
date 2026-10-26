@@ -13,6 +13,13 @@ Added
 * ``PseudoIntensityVectorAnalyzer`` estimating one direction of arrival per
   sample from the pseudo-intensity vector of a first-order signal, smoothed
   by a centred Hann window of odd length.
+* ``LoudspeakerSynthesizer`` rendering an analysis to a loudspeaker array with
+  nearest-loudspeaker panning, optionally weighted for horizontal layouts.
+* ``SDMPipeline`` chaining analysis, rendering and equalization, and
+  ``sdm_loudspeakers`` doing all three in one call for a spherical harmonic
+  signal.
+* ``pyspar.io.load_loudspeaker_array`` reading IEM-convention JSON layouts,
+  dropping imaginary loudspeakers.
 
 Changed
 ^^^^^^^

@@ -103,6 +103,7 @@ class TimeResult:
         return float(self.signal.sampling_rate)
 
 
+
 class AnalyzerBase(ABC):
     """Abstract base class of the spatial analyzers.
 
