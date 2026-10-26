@@ -32,10 +32,12 @@ class TimeResult:
         Omnidirectional pressure impulse response, one channel.
     signal : pyfar.Signal
         The analyzed signal: the first-order spharpy.SphericalHarmonicSignal
-        in ACN/N3D for the pseudo-intensity vector.
+        in ACN/N3D for the pseudo-intensity vector, the capsule signals for
+        time differences of arrival.
     doa : pyfar.Coordinates, cshape (n_samples,)
-        Direction of arrival per sample of `pressure`, as a unit vector;
-        samples without a direction are NaN.
+        Direction of arrival per sample of `pressure`, as a unit vector or,
+        from time differences of arrival, scaled by the distance sound
+        travels up to that sample; samples without a direction are NaN.
     sampling_rate : float
         Sampling rate of `signal` in Hz.
     """

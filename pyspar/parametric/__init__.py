@@ -10,7 +10,8 @@ from .classes import (
     SynthesizerBase,
     TimeResult,
 )
-from .analyzers import PseudoIntensityVectorAnalyzer
+from .analyzers import (
+    PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
 from .synthesizers import BinauralSynthesizer, LoudspeakerSynthesizer
 from .pipelines import SDMPipeline, sdm_binaural, sdm_loudspeakers
 
@@ -25,5 +26,6 @@ __all__ = [
     'sdm_loudspeakers',
     'SDMPipeline',
     'SynthesizerBase',
+    'TimeDifferenceOfArrivalAnalyzer',
     'TimeResult',
 ]
