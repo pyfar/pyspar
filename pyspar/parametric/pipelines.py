@@ -84,7 +84,7 @@ class SDMPipeline:
 
 
 def sdm_loudspeakers(signal, loudspeakers, *, window_length, panning='nls',
-                     dimensionality=3):
+                     dimensionality=3, lfe_channels=None, lfe_cutoff=80):
     """Render a measured impulse response to loudspeakers with SDM.
 
     Analysis and rendering in one call; for several renders of the same
@@ -109,6 +109,12 @@ def sdm_loudspeakers(signal, loudspeakers, *, window_length, panning='nls',
         Dimensionality of the layout, see
         :class:`~pyspar.parametric.LoudspeakerSynthesizer`. The default is
         ``3``.
+    lfe_channels : int, sequence of int, optional
+        Indices of the LFE channels in `loudspeakers`, see
+        :class:`~pyspar.parametric.LoudspeakerSynthesizer`. The default is
+        ``None``.
+    lfe_cutoff : float, optional
+        Crossover frequency of the LFE channels in Hz. The default is ``80``.
 
     Returns
     -------
@@ -118,5 +124,7 @@ def sdm_loudspeakers(signal, loudspeakers, *, window_length, panning='nls',
     pipeline = SDMPipeline(
         PseudoIntensityVectorAnalyzer(window_length=window_length),
         LoudspeakerSynthesizer(loudspeakers, panning=panning,
-                               dimensionality=dimensionality))
+                               dimensionality=dimensionality,
+                               lfe_channels=lfe_channels,
+                               lfe_cutoff=lfe_cutoff))
     return pipeline(signal)

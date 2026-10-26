@@ -20,6 +20,9 @@ Added
   signal.
 * ``pyspar.io.load_loudspeaker_array`` reading IEM-convention JSON layouts,
   dropping imaginary loudspeakers.
+* Crossover to low-frequency effects (LFE) channels in
+  ``LoudspeakerSynthesizer`` and ``sdm_loudspeakers``, set by
+  ``lfe_channels`` and ``lfe_cutoff``.
 
 Changed
 ^^^^^^^
