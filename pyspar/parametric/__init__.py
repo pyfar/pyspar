@@ -11,12 +11,17 @@ from .classes import (
     TimeResult,
 )
 from .analyzers import PseudoIntensityVectorAnalyzer
+from .synthesizers import LoudspeakerSynthesizer
+from .pipelines import SDMPipeline, sdm_loudspeakers
 
 
 __all__ = [
     'AnalyzerBase',
+    'LoudspeakerSynthesizer',
     'Postprocessor',
     'PseudoIntensityVectorAnalyzer',
+    'sdm_loudspeakers',
+    'SDMPipeline',
     'SynthesizerBase',
     'TimeResult',
 ]

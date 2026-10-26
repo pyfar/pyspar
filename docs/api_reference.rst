@@ -17,9 +17,12 @@ Modules
    :maxdepth: 1
 
    modules/pyspar
+   modules/pyspar.io
    modules/pyspar.parametric
    modules/pyspar.parametric.classes
    modules/pyspar.parametric.analyzers
+   modules/pyspar.parametric.synthesizers
+   modules/pyspar.parametric.pipelines
 
 
 .. _examples gallery: https://pyfar-gallery.readthedocs.io/en/latest/examples_gallery.html
