@@ -23,6 +23,9 @@ Added
 * Crossover to low-frequency effects (LFE) channels in
   ``LoudspeakerSynthesizer`` and ``sdm_loudspeakers``, set by
   ``lfe_channels`` and ``lfe_cutoff``.
+* ``BinauralSynthesizer`` rendering an analysis to ear signals through
+  virtual loudspeakers, and ``sdm_binaural`` doing analysis and rendering in
+  one call.
 
 Changed
 ^^^^^^^

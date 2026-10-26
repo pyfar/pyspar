@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from .analyzers import PseudoIntensityVectorAnalyzer
 from .classes import AnalyzerBase, Postprocessor, SynthesizerBase
-from .synthesizers import LoudspeakerSynthesizer
+from .synthesizers import BinauralSynthesizer, LoudspeakerSynthesizer
 
 
 class SDMPipeline:
@@ -127,4 +127,48 @@ def sdm_loudspeakers(signal, loudspeakers, *, window_length, panning='nls',
                                dimensionality=dimensionality,
                                lfe_channels=lfe_channels,
                                lfe_cutoff=lfe_cutoff))
+    return pipeline(signal)
+
+
+def sdm_binaural(signal, hrirs, hrir_directions, *, window_length,
+                 virtual_loudspeakers=None, panning='nls', dimensionality=3):
+    """Render a measured impulse response to binaural signals with SDM.
+
+    Analysis and rendering in one call; for several renders of the same
+    measurement, analyze once with a
+    :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer` and reuse the
+    result.
+
+    Parameters
+    ----------
+    signal : spharpy.SphericalHarmonicSignal
+        Measured impulse response, a spherical harmonic signal of order one
+        or higher. Its sampling rate configures the analysis and must match
+        that of `hrirs`.
+    hrirs : pyfar.Signal
+        Head-related impulse responses, ``cshape (n_directions, 2)``.
+    hrir_directions : pyfar.Coordinates
+        Measurement directions of `hrirs`.
+    window_length : int
+        Window of the analysis, in samples, see
+        :class:`~pyspar.parametric.PseudoIntensityVectorAnalyzer`.
+    virtual_loudspeakers : pyfar.Coordinates, optional
+        Loudspeaker layout that selects a subset of the measurement grid, see
+        :class:`~pyspar.parametric.BinauralSynthesizer`. ``None``, the default,
+        renders on the whole grid.
+    panning : ``'nls'``, optional
+        Panning law. The default is ``'nls'``.
+    dimensionality : ``3``, ``2``, optional
+        Dimensionality of the rendering. The default is ``3``.
+
+    Returns
+    -------
+    ear_signals : pyfar.Signal
+        Left and right ear signals, ``cshape (2,)``.
+    """
+    pipeline = SDMPipeline(
+        PseudoIntensityVectorAnalyzer(window_length=window_length),
+        BinauralSynthesizer(hrirs, hrir_directions,
+                            virtual_loudspeakers=virtual_loudspeakers,
+                            panning=panning, dimensionality=dimensionality))
     return pipeline(signal)

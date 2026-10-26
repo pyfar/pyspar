@@ -1,9 +1,10 @@
-"""Synthesizers turning an analysis result into loudspeaker signals."""
+"""Synthesizers turning an analysis result into loudspeaker or ear signals."""
 from __future__ import annotations
 
 import numpy as np
 import pyfar as pf
 from scipy.signal import sosfiltfilt
+from spharpy import SphericalHarmonicSignal
 
 from .classes import SynthesizerBase, TimeResult
 from pyspar.utils.directions import _replace_missing_doa, nearest_directions
@@ -271,3 +272,227 @@ def _lfe_crossover(signal, loudspeakers, lfe_channels, cutoff):
         low, data[:, others], axis=0, padlen=padding) @ _lfe_shares(
             layout, lfe_channels)
     return pf.Signal(split.T, sampling_rate)
+
+
+class BinauralSynthesizer(SynthesizerBase):
+    """Render an analysis result to binaural room impulse responses.
+
+    The analysis is rendered, as by :class:`LoudspeakerSynthesizer`, to the
+    measurement grid of the head-related impulse responses, and each
+    signal is convolved with the head-related impulse response of its
+    direction; the ear signals are the sums. `virtual_loudspeakers`
+    restrict the rendering to a subset of the grid: the analysis is
+    rendered to the virtual loudspeakers, and each takes the head-related
+    impulse response measured nearest to it.
+
+    Parameters
+    ----------
+    hrirs : pyfar.Signal
+        Head-related impulse responses with ``cshape (n_directions, 2)``, the
+        left ear first, at the sampling rate of the analyses to be rendered.
+        A measured set is read from a SOFA file with
+        :py:func:`pyfar.io.read_sofa`, which also returns `hrir_directions`
+        as its second output (the source positions).
+    hrir_directions : pyfar.Coordinates
+        Measurement directions of `hrirs`, ``cshape (n_directions,)``, the
+        source positions of the SOFA file.
+    virtual_loudspeakers : pyfar.Coordinates, optional
+        Loudspeaker layout that selects a subset of the measurement grid:
+        the analysis is rendered to these directions, and each takes the
+        head-related impulse response measured nearest to it, matched by
+        angle alone. ``None``, the default, uses no virtual loudspeakers
+        and renders on the whole grid. A grid of fewer, evenly spread
+        directions, for example a Lebedev grid, quantizes the directions of
+        the analysis to its points, see Examples. A layout of a listening
+        room is passed without its LFE channels, which would otherwise be
+        rendered as loudspeakers at their positions.
+    panning : ``'nls'``, optional
+        Panning law, see :class:`LoudspeakerSynthesizer`. The default is
+        ``'nls'``.
+    dimensionality : ``3``, ``2``, optional
+        Dimensionality of the rendering, see
+        :class:`LoudspeakerSynthesizer`. The default is ``3``.
+
+    Attributes
+    ----------
+    virtual_loudspeakers : pyfar.Coordinates or None
+        The layout given, or ``None``.
+    panning : str
+        Panning law in use.
+    dimensionality : int
+        Dimensionality of the rendering.
+
+    Notes
+    -----
+    The ear signals have ``n_samples + n_hrir - 1`` samples, the full linear
+    convolution, so the tail the head-related impulse responses add to the
+    last samples is kept.
+
+    Examples
+    --------
+    Measured head-related impulse responses are read with
+    :py:func:`pyfar.io.read_sofa`.
+
+    >>> import numpy as np
+    >>> import pyfar as pf
+    >>> import pyspar
+    >>> from spharpy import SphericalHarmonicSignal
+    >>> signal = SphericalHarmonicSignal(
+    ...     np.random.default_rng(0).standard_normal((4, 256)), 48000,
+    ...     'real', 'N3D', 'ACN', False)
+    >>> directions = pf.Coordinates.from_spherical_elevation(
+    ...     np.deg2rad([0, 90, 180, 270, 0, 0]),
+    ...     np.deg2rad([0, 0, 0, 0, 90, -90]), 1)
+    >>> hrirs = pf.Signal(np.zeros((6, 2, 32)), 48000)
+    >>> result = pyspar.parametric.PseudoIntensityVectorAnalyzer()(signal)
+    >>> brir = pyspar.parametric.BinauralSynthesizer(hrirs, directions)(result)
+    >>> brir.cshape, brir.n_samples
+    ((2,), 287)
+
+    The directions of the analysis can be quantized to a smaller grid, for
+    example the 50 points of a Lebedev grid. spharpy asks for the spherical
+    harmonics order ``n_max`` of the grid, not for a number of points: the
+    orders 1 to 8 give 6, 14, 26, 38, 50, 74, 86 and 110 points.
+
+    >>> from spharpy.samplings import lebedev
+    >>> grid = lebedev(n_max=5)
+    >>> grid.csize
+    50
+    >>> synthesizer = pyspar.parametric.BinauralSynthesizer(
+    ...     hrirs, directions, virtual_loudspeakers=grid)
+    >>> synthesizer(result).cshape
+    (2,)
+    """
+
+    def __init__(self, hrirs, hrir_directions, virtual_loudspeakers=None,
+                 panning='nls', dimensionality=3):
+        if (not isinstance(hrirs, pf.Signal)
+                or isinstance(hrirs, SphericalHarmonicSignal)):
+            raise TypeError(
+                "hrirs must be a pyfar.Signal; got "
+                f"{type(hrirs).__name__}.")
+        if len(hrirs.cshape) != 2 or hrirs.cshape[1] != 2:
+            raise ValueError(
+                "hrirs must have cshape (n_directions, 2), got "
+                f"{hrirs.cshape}.")
+        if not isinstance(hrir_directions, pf.Coordinates):
+            raise TypeError(
+                "hrir_directions must be a pyfar.Coordinates; got "
+                f"{type(hrir_directions).__name__}.")
+        if hrir_directions.cshape != (hrirs.cshape[0],):
+            raise ValueError(
+                f"hrirs holds {hrirs.cshape[0]} directions but "
+                f"hrir_directions has cshape {hrir_directions.cshape}.")
+        if virtual_loudspeakers is not None and not isinstance(
+                virtual_loudspeakers, pf.Coordinates):
+            raise TypeError(
+                "virtual_loudspeakers must be a pyfar.Coordinates or None; "
+                f"got {type(virtual_loudspeakers).__name__}.")
+        for name, directions in (("hrir_directions", hrir_directions),
+                                 ("virtual_loudspeakers",
+                                  virtual_loudspeakers)):
+            if directions is not None and np.any(
+                    ~(np.atleast_1d(directions.radius) > 0)):
+                raise ValueError(f"{name} must have a nonzero radius.")
+
+        self._virtual_loudspeakers = virtual_loudspeakers
+        measured = np.asarray(hrirs.time, dtype=float)        # (Q, 2, M)
+        if virtual_loudspeakers is None:
+            virtual_loudspeakers = hrir_directions
+        else:
+            measured = measured[nearest_directions(hrir_directions,
+                                                   virtual_loudspeakers)]
+
+        self._loudspeaker_synthesizer = LoudspeakerSynthesizer(
+            virtual_loudspeakers, panning=panning,
+            dimensionality=dimensionality)
+        self._hrirs = pf.Signal(measured, hrirs.sampling_rate)  # (L, 2)
+        self._sampling_rate = float(hrirs.sampling_rate)
+
+    @property
+    def virtual_loudspeakers(self):
+        """The layout given, or ``None``."""
+        return self._virtual_loudspeakers
+
+    @property
+    def panning(self):
+        """Panning law in use."""
+        return self._loudspeaker_synthesizer.panning
+
+    @property
+    def dimensionality(self):
+        """Dimensionality of the rendering."""
+        return self._loudspeaker_synthesizer.dimensionality
+
+    def render_loudspeakers(self, result: TimeResult) -> pf.Signal:
+        """Render `result` to the loudspeaker signals only.
+
+        Together with :meth:`convolve`, this lets a correction act on the
+        loudspeaker signals between the two stages.
+
+        Parameters
+        ----------
+        result : pyspar.parametric.TimeResult
+            Pressure and direction of arrival per sample.
+
+        Returns
+        -------
+        loudspeaker_signals : pyfar.Signal
+            Loudspeaker signals, one per virtual loudspeaker or, without
+            them, per measured direction, ``cshape (n_loudspeakers,)``.
+        """
+        return self._loudspeaker_synthesizer(result)
+
+    def convolve(self, loudspeaker_signals) -> pf.Signal:
+        """Convolve loudspeaker signals to ear signals.
+
+        Parameters
+        ----------
+        loudspeaker_signals : pyfar.Signal
+            Loudspeaker signals as returned by :meth:`render_loudspeakers`,
+            ``cshape (n_loudspeakers,)``, at the sampling rate of the
+            head-related impulse responses.
+
+        Returns
+        -------
+        ear_signals : pyfar.Signal
+            Left and right ear signals, ``cshape (2,)``.
+        """
+        n_loudspeakers = self._hrirs.cshape[0]
+        if (not isinstance(loudspeaker_signals, pf.Signal)
+                or isinstance(loudspeaker_signals, SphericalHarmonicSignal)):
+            raise TypeError(
+                "loudspeaker_signals must be a pyfar.Signal; got "
+                f"{type(loudspeaker_signals).__name__}.")
+        if loudspeaker_signals.cshape != (n_loudspeakers,):
+            raise ValueError(
+                f"loudspeaker_signals must have cshape ({n_loudspeakers},), "
+                "as returned by render_loudspeakers; got "
+                f"{loudspeaker_signals.cshape}.")
+        if abs(loudspeaker_signals.sampling_rate - self._sampling_rate) > 0.5:
+            raise ValueError(
+                f"The signal sampling_rate "
+                f"({loudspeaker_signals.sampling_rate} Hz) does not match "
+                f"the hrirs ({self._sampling_rate} Hz); resample the hrirs "
+                "with pyfar.dsp.resample first.")
+
+        feeds = pf.Signal(loudspeaker_signals.time[:, np.newaxis],
+                          self._sampling_rate)
+        ears = pf.dsp.convolve(feeds, self._hrirs, mode='full')
+        return pf.Signal(ears.time.sum(axis=0), self._sampling_rate)
+
+    def __call__(self, result: TimeResult) -> pf.Signal:
+        """Render `result` to left and right ear signals.
+
+        Parameters
+        ----------
+        result : pyspar.parametric.TimeResult
+            Pressure and direction of arrival per sample, at the sampling
+            rate of the head-related impulse responses.
+
+        Returns
+        -------
+        ear_signals : pyfar.Signal
+            Left and right ear signals, ``cshape (2,)``.
+        """
+        return self.convolve(self.render_loudspeakers(result))
