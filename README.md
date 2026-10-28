@@ -6,7 +6,13 @@
 [![Documentation Status](https://readthedocs.org/projects/pyspar/badge/?version=stable)](https://pyspar.readthedocs.io/en/stable/?badge=stable)
 [![CircleCI](https://circleci.com/gh/pyfar/pyspar.svg?style=shield)](https://circleci.com/gh/pyfar/pyspar)
 
-The python package spatial parametric audio rendering (pyspar) offers methods for processing spatial impulse responses and running signals. It contains functions of analysis, rendering and visualization.
+The Python package for spatial audio rendering (pyspar) renders spatial room
+impulse responses and running signals captured with microphone arrays to
+loudspeaker arrays, headphones and higher-order Ambisonics. It offers linear,
+signal-independent methods (Ambisonic encoding of spherical microphone array
+signals, Ambisonic decoding, VBAP) and parametric, signal-dependent methods
+(e.g. SDM, HO-SIRR, HO-DirAC), as well as functions to analyze spatial
+parameters and to visualize the results.
 
 ## Getting Started
 
