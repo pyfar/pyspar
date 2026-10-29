@@ -7,7 +7,8 @@ from spharpy import SphericalHarmonicSignal
 from spharpy.spherical import spherical_harmonic_basis_real
 
 from .classes import SynthesizerBase, TimeResult
-from .postprocessors import SpectralDecayCorrection
+from .postprocessors import (
+    LoudspeakerSpectrumEqualization, SpectralDecayCorrection)
 from pyspar.utils.directions import _nearest_directions, _replace_missing_doa
 
 
@@ -38,6 +39,12 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         LFE channels.
     lfe_cutoff : float, optional
         Crossover frequency of the LFE channels in Hz. The default is ``80``.
+    correction : str or pyspar.parametric.Postprocessor, optional
+        Equalization of the loudspeaker signals, applied after panning:
+        ``'loudspeaker_spectrum'`` for a
+        :class:`~pyspar.parametric.LoudspeakerSpectrumEqualization` with its
+        default settings, or an instance of it. ``None``, the default,
+        applies none.
 
     Attributes
     ----------
@@ -51,18 +58,20 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         Indices of the LFE channels.
     lfe_cutoff : float
         Crossover frequency of the LFE channels in Hz.
+    correction : pyspar.parametric.Postprocessor or None
+        Equalization in use.
 
     Notes
     -----
-    With `lfe_channels`, a crossover runs after the panning: third-order
-    Butterworth low-pass and high-pass filters at `lfe_cutoff`, applied forward
-    and backward. The other loudspeakers are high-passed, and their low-passed
-    signals go in equal shares to the LFE channels on their side; a loudspeaker
-    in the median plane gives half to each side, an LFE channel in the median
-    plane serves both sides, and a side without an LFE channel is served by all
-    of them. Left and right follow from the positions in `loudspeakers`. All
-    channels together add up to the signals before the crossover, except near
-    its ends.
+    With `lfe_channels`, a crossover runs after the panning and the
+    equalization: third-order Butterworth low-pass and high-pass filters at
+    `lfe_cutoff`, applied forward and backward. The other loudspeakers are
+    high-passed, and their low-passed signals go in equal shares to the LFE
+    channels on their side; a loudspeaker in the median plane gives half to
+    each side, an LFE channel in the median plane serves both sides, and a side
+    without an LFE channel is served by all of them. Left and right follow from
+    the positions in `loudspeakers`. All channels together add up to the
+    signals before the crossover, except near its ends.
 
     References
     ----------
@@ -94,7 +103,7 @@ class LoudspeakerSynthesizer(SynthesizerBase):
     """
 
     def __init__(self, loudspeakers, panning='nls', dimensionality=3,
-                 lfe_channels=None, lfe_cutoff=80):
+                 lfe_channels=None, lfe_cutoff=80, correction=None):
         if not isinstance(loudspeakers, pf.Coordinates):
             raise TypeError(
                 "loudspeakers must be a pyfar.Coordinates; got "
@@ -125,6 +134,7 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         self.dimensionality = dimensionality
         self.lfe_channels = lfe_channels
         self.lfe_cutoff = float(lfe_cutoff)
+        self.correction = _resolve_correction(correction)
 
     def __call__(self, result: TimeResult) -> pf.Signal:
         """Render `result` to loudspeaker signals.
@@ -162,6 +172,8 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         data[np.arange(n_samples), panned[index]] = pressure
 
         signal = pf.Signal(data.T, result.sampling_rate)
+        if self.correction is not None:
+            signal = self.correction(signal, result=result)
         if self.lfe_channels:
             signal = _lfe_crossover(
                 signal, self.loudspeakers, self.lfe_channels,
@@ -273,6 +285,27 @@ def _lfe_crossover(signal, loudspeakers, lfe_channels, cutoff):
     return pf.Signal(split.T, sampling_rate)
 
 
+def _resolve_correction(correction):
+    """Return `correction` as a correction, or None."""
+    if isinstance(correction, SpectralDecayCorrection):
+        raise ValueError(
+            "A pyspar.parametric.SpectralDecayCorrection corrects Ambisonic "
+            "signals: use it with pyspar.parametric.AmbisonicSynthesizer.")
+    if correction is None or isinstance(correction,
+                                        LoudspeakerSpectrumEqualization):
+        return correction
+    if isinstance(correction, str):
+        if correction != 'loudspeaker_spectrum':
+            raise ValueError(
+                f"correction is {correction!r} but must be "
+                "'loudspeaker_spectrum', a correction instance or None.")
+        return LoudspeakerSpectrumEqualization()
+    raise TypeError(
+        "correction must be a mode string, a "
+        "pyspar.parametric.LoudspeakerSpectrumEqualization or None; got "
+        f"{type(correction).__name__}.")
+
+
 class BinauralSynthesizer(SynthesizerBase):
     """Render an analysis result to binaural room impulse responses.
 
@@ -308,6 +341,12 @@ class BinauralSynthesizer(SynthesizerBase):
     panning : ``'nls'``, optional
         Panning law, see :class:`LoudspeakerSynthesizer`. The default is
         ``'nls'``.
+    correction : str or pyspar.parametric.Postprocessor, optional
+        Equalization of the loudspeaker signals, applied before the
+        convolution: ``'loudspeaker_spectrum'`` for a
+        :class:`~pyspar.parametric.LoudspeakerSpectrumEqualization` with its
+        default settings, or an instance of it, see
+        :class:`LoudspeakerSynthesizer`. The default is ``None``.
 
     Attributes
     ----------
@@ -315,12 +354,16 @@ class BinauralSynthesizer(SynthesizerBase):
         The layout given, or ``None``.
     panning : str
         Panning law in use.
+    correction : pyspar.parametric.Postprocessor or None
+        Equalization in use.
 
     Notes
     -----
     The ear signals are the sums of the convolutions, with the length of the
     loudspeaker signals plus that of the head-related impulse responses minus
-    one.
+    one. Equalizations of the loudspeaker signals act on every virtual
+    loudspeaker or, without `virtual_loudspeakers`, on every direction of
+    `hrir_directions`.
 
     References
     ----------
@@ -365,7 +408,7 @@ class BinauralSynthesizer(SynthesizerBase):
     """
 
     def __init__(self, hrirs, hrir_directions, virtual_loudspeakers=None,
-                 panning='nls'):
+                 panning='nls', correction=None):
         if (not isinstance(hrirs, pf.Signal)
                 or isinstance(hrirs, SphericalHarmonicSignal)):
             raise TypeError(
@@ -404,7 +447,7 @@ class BinauralSynthesizer(SynthesizerBase):
                                                     virtual_loudspeakers)]
 
         self._loudspeaker_synthesizer = LoudspeakerSynthesizer(
-            virtual_loudspeakers, panning=panning)
+            virtual_loudspeakers, panning=panning, correction=correction)
         self._hrirs = pf.Signal(measured, hrirs.sampling_rate)  # (L, 2)
         self._sampling_rate = float(hrirs.sampling_rate)
 
@@ -418,8 +461,16 @@ class BinauralSynthesizer(SynthesizerBase):
         """Panning law in use."""
         return self._loudspeaker_synthesizer.panning
 
+    @property
+    def correction(self):
+        """Equalization in use."""
+        return self._loudspeaker_synthesizer.correction
+
     def render_loudspeakers(self, result: TimeResult) -> pf.Signal:
         """Render `result` to the loudspeaker signals only.
+
+        The signals include the equalization of the loudspeaker signals, if
+        any.
 
         Parameters
         ----------

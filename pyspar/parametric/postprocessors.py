@@ -10,6 +10,245 @@ from spharpy import SphericalHarmonicSignal
 from .classes import TimeResult, Postprocessor
 
 
+class LoudspeakerSpectrumEqualization(Postprocessor):
+    r"""Post equalization of the loudspeaker spectra.
+
+    The post equalization of the loudspeaker spectra of Tervo et al. [#]_ in
+    octave bands. For each band, the loudspeaker signals and the pressure are
+    cut into short-time Fourier-transform frames of `periods` periods of the
+    band's lower edge with 50 % overlap. Every loudspeaker spectrum is scaled
+    per frequency bin, keeping its phase, so that the sum of the loudspeaker
+    powers matches the power of the pressure; the lowest bands deviate, see
+    Notes. The scaled frames are added with their overlap and filtered by the
+    band filter, and the bands are summed.
+
+    Parameters
+    ----------
+    periods : int, optional
+        Length of the frames of a band in periods of its lower edge; the
+        low-pass band, which reaches down to 0 Hz, counts periods of the
+        geometric mean of 1 Hz and its upper edge of 44 Hz. The default is
+        ``7``: about 1 s for the low-pass, 157 ms for the octave at 63 Hz
+        and 0.6 ms for the octave at 16 kHz.
+    max_boost_db : float, optional
+        Soft limit of the gain in dB. Gains above 0 dB are compressed
+        towards the limit by :func:`pyfar.dsp.soft_limit_spectrum` with a
+        knee of twice the limit, so notches of the sum of the loudspeaker
+        spectra are not inverted fully. The default is ``6``;
+        ``numpy.inf`` applies no limit.
+
+    Attributes
+    ----------
+    periods : int
+        Frame length in periods of the lower band edge.
+    max_boost_db : float
+        Soft limit of the gain in dB.
+
+    Notes
+    -----
+    The bands are the amplitude-preserving filters of
+    :func:`pyfar.dsp.filter.reconstructing_fractional_octave_bands`: a low-pass
+    below 44 Hz, the octaves at 63 Hz to 8 kHz, and the octave at 16 kHz
+    extended to the Nyquist frequency. Each band's frames are weighted by a
+    Hann window, transformed with :math:`2 L - 1` points for :math:`L` samples,
+    scaled by the zero-phase gain
+
+    .. math::
+        g(k) = \frac{|P(k)|}{\sqrt{\sum_l |X_l(k)|^2}}
+
+    with the frame spectrum :math:`P` of the pressure and :math:`X_l` of the
+    loudspeakers, and added with their overlap.
+
+    In the low-pass band and the octaves at 63 and 125 Hz, the root of the
+    summed powers in the denominator is mixed with the sum of the magnitudes,
+    :math:`\sum_l |X_l(k)|`, in shares of 1, 1/2 and 1/4 of the latter. A
+    loudspeaker that is silent stays silent, and the signals keep their length.
+
+    References
+    ----------
+    .. [#] S. Tervo, J. Patynen, N. Kaplanis, M. Lydolf, S. Bech and T.
+           Lokki, "Spatial analysis and synthesis of car audio system and
+           car cabin acoustics with a compact microphone array," J. Audio
+           Eng. Soc., vol. 63, no. 11, pp. 914-925, 2015.
+
+    Examples
+    --------
+    Equalize the loudspeaker signals inside the synthesizer.
+
+    >>> import numpy as np
+    >>> import pyfar as pf
+    >>> import pyspar
+    >>> from spharpy import SphericalHarmonicSignal
+    >>> signal = SphericalHarmonicSignal(
+    ...     np.random.default_rng(0).standard_normal((4, 4096)), 48000,
+    ...     'real', 'N3D', 'ACN', False)
+    >>> loudspeakers = pf.Coordinates.from_spherical_elevation(
+    ...     np.deg2rad([0, 30, -30, 110, -110]), 0, 1)
+    >>> result = pyspar.parametric.PseudoIntensityVectorAnalyzer(
+    ...     window_length=5)(signal)
+    >>> rendered = pyspar.parametric.LoudspeakerSynthesizer(
+    ...     loudspeakers,
+    ...     correction=pyspar.parametric.LoudspeakerSpectrumEqualization())(
+    ...         result)
+    >>> rendered.cshape, rendered.n_samples
+    ((5,), 4096)
+    """
+
+    stage = 'loudspeaker'
+
+    def __init__(self, periods=7, max_boost_db=6.0):
+        if isinstance(periods, bool) or not isinstance(periods,
+                                                       (int, np.integer)):
+            raise TypeError(
+                f"periods must be an integer; got {type(periods).__name__}.")
+        if periods < 1:
+            raise ValueError(f"periods is {periods} but must be at least 1.")
+        if (isinstance(max_boost_db, bool)
+                or not isinstance(max_boost_db, (int, float, np.number))):
+            raise TypeError(
+                "max_boost_db must be a number; got "
+                f"{type(max_boost_db).__name__}.")
+        if np.isnan(max_boost_db) or max_boost_db < 0:
+            raise ValueError(
+                f"max_boost_db is {max_boost_db} but must be non-negative.")
+        self.periods = int(periods)
+        self.max_boost_db = float(max_boost_db)
+
+    def __call__(self, signal, result: TimeResult | None = None):
+        """Equalize the loudspeaker signals together towards the pressure.
+
+        Parameters
+        ----------
+        signal : pyfar.Signal
+            Loudspeaker signals with as many samples as the pressure.
+        result : pyspar.parametric.TimeResult
+            Analysis the signals were rendered from; its pressure is the
+            spectral target.
+
+        Returns
+        -------
+        signal : pyfar.Signal
+            Equalized signals with the cshape and length of `signal`.
+        """
+        if (not isinstance(signal, pf.Signal)
+                or isinstance(signal, SphericalHarmonicSignal)):
+            raise TypeError(
+                "LoudspeakerSpectrumEqualization requires a pyfar.Signal; "
+                f"got {type(signal).__name__}.")
+        if not isinstance(result, TimeResult):
+            raise TypeError(
+                "LoudspeakerSpectrumEqualization requires the "
+                "pyspar.parametric.TimeResult the signal was rendered "
+                f"from; got {type(result).__name__}.")
+        fs = signal.sampling_rate
+        if abs(fs - result.sampling_rate) > 0.5:
+            raise ValueError(
+                f"The signal sampling_rate ({fs} Hz) does not match the "
+                f"result ({result.sampling_rate} Hz).")
+        pressure = result.pressure.time[0]
+        n_samples = signal.n_samples
+        if n_samples != len(pressure):
+            raise ValueError(
+                f"The signal has {n_samples} samples but the pressure of "
+                f"the result has {len(pressure)}.")
+
+        feeds = np.asarray(signal.time, dtype=float).reshape(-1, n_samples)
+        equalized = _equalize_loudspeaker_spectra(
+            feeds, pressure, fs, self.periods, self.max_boost_db)
+        return pf.Signal(equalized.reshape(signal.cshape + (-1,)), fs)
+
+
+def _equalize_loudspeaker_spectra(feeds, pressure, sampling_rate, periods,
+                                  max_boost_db):
+    """Post equalization of the loudspeaker spectra, see the class.
+
+    Parameters
+    ----------
+    feeds : numpy.ndarray, shape (n_loudspeakers, n_samples)
+        Loudspeaker signals.
+    pressure : numpy.ndarray, shape (n_samples,)
+        Pressure, the spectral target.
+    sampling_rate : float
+        Sampling rate in Hz.
+    periods : int
+        Frame length in periods of the lower band edge.
+    max_boost_db : float
+        Soft limit of the gain in dB, ``inf`` for none.
+
+    Returns
+    -------
+    equalized : numpy.ndarray, shape (n_loudspeakers, n_samples)
+        Equalized loudspeaker signals.
+    """
+    n_loudspeakers, n_samples = feeds.shape
+    # pyfar's reconstructing octave bank with a low-pass below 44 Hz.
+    n_taps = 2 ** int(np.ceil(np.log2(sampling_rate)))
+    with warnings.catch_warnings():
+        # The returned centre frequencies are deprecated.
+        warnings.simplefilter('ignore')
+        bank = pf.dsp.filter.reconstructing_fractional_octave_bands(
+            None, 1, (31.5, 16000), n_samples=n_taps,
+            sampling_rate=sampling_rate)
+    filters = np.asarray((bank[0] if isinstance(bank, tuple)
+                          else bank).coefficients).reshape(-1, n_taps)
+    # Frames of `periods` periods of the lower band edge, of even length.
+    _, lower, upper = pf.constants.fractional_octave_frequencies_exact(
+        1, (31.5, 16000))
+    lower = lower[:len(filters)]
+    lower[0] = np.sqrt(upper[0])
+    frame_lengths = 2 * np.ceil(
+        periods * sampling_rate / lower / 2).astype(int)
+    pad = int(frame_lengths.max())
+    # Shares of the coherent sum of the magnitudes in the denominator of
+    # the gain, for the lowest bands.
+    coherent = np.zeros(len(filters))
+    coherent[:3] = [1.0, 0.5, 0.25]
+
+    padded = np.pad(feeds, ((0, 0), (pad, pad)))
+    pressure_padded = np.pad(pressure, (pad, pad))
+    buffers = np.zeros((n_loudspeakers, n_samples + 4 * pad))
+    for response, length, share in zip(filters, frame_lengths, coherent,
+                                       strict=True):
+        hop = length // 2
+        window = pf.dsp.time_window(pf.Signal(
+            np.ones(length + 1), sampling_rate), (0, length)).time[0, :-1]
+        n_fft = 2 * length - 1
+        delay = n_fft // 2
+        starts = np.arange(0, padded.shape[1] - length + 1, hop)
+        frames = np.lib.stride_tricks.sliding_window_view(
+            padded, length, axis=1)[:, starts]                # (L, F, length)
+        spectra = pf.dsp.fft.rfft(
+            frames * window, n_fft, sampling_rate, 'none')
+        target = np.abs(pf.dsp.fft.rfft(
+            np.lib.stride_tricks.sliding_window_view(
+                pressure_padded, length)[starts] * window, n_fft,
+            sampling_rate, 'none'))
+        magnitudes = np.abs(spectra)
+        incoherent = np.sqrt(np.sum(magnitudes ** 2, axis=0))
+        summed = np.sum(magnitudes, axis=0)
+        denominator = (share * np.maximum(summed, 1e-9)
+                       + (1 - share) * np.maximum(incoherent, 1e-9))
+        gain = target / denominator
+        if np.isfinite(max_boost_db):
+            with np.errstate(divide='ignore'):
+                gain = np.abs(pf.dsp.soft_limit_spectrum(
+                    pf.FrequencyData(gain, pf.dsp.fft.rfftfreq(
+                        n_fft, sampling_rate)), max_boost_db,
+                    2 * max_boost_db).freq)
+        equalized = pf.dsp.time_shift(pf.Signal(
+            spectra * gain, sampling_rate, n_fft, 'freq'), delay).time
+        band_buffer = np.zeros_like(buffers)
+        for frame, start in enumerate(starts):
+            first = pad + start - delay
+            band_buffer[:, first:first + n_fft] += equalized[:, frame]
+        # The band filter delays by half its length.
+        filtered = pf.dsp.convolve(
+            pf.Signal(band_buffer, sampling_rate),
+            pf.Signal(response, sampling_rate), method='fft').time
+        buffers += filtered[:, n_taps // 2:n_taps // 2 + buffers.shape[1]]
+    return buffers[:, 2 * pad:2 * pad + n_samples]
+
+
 class SpectralDecayCorrection(Postprocessor):
     r"""Correct the spectral decay of an upmixed Ambisonic signal.
 

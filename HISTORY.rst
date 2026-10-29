@@ -38,6 +38,12 @@ Added
   upmixing, matching the third-octave energy decay of every order to that
   of the analyzed signal, applied by ``AmbisonicSynthesizer`` unless
   ``spectral_decay_correction=False``.
+* ``LoudspeakerSpectrumEqualization``, the post equalization of the
+  loudspeaker spectra in octave bands and short-time frames, matching the
+  sum of the loudspeaker spectra to the pressure, available as
+  ``correction='loudspeaker_spectrum'`` of the loudspeaker and binaural
+  synthesizers.
+* Each synthesizer accepts a correction only where it applies.
 
 Changed
 ^^^^^^^
