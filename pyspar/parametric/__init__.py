@@ -7,7 +7,8 @@ loudspeaker signals inside the synthesizer or the rendered signal.
 from .classes import TimeResult
 from .analyzers import (
     PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
-from .postprocessors import SpectralDecayCorrection
+from .postprocessors import (
+    LoudspeakerSpectrumEqualization, SpectralDecayCorrection)
 from .synthesizers import (
     AmbisonicSynthesizer, BinauralSynthesizer, LoudspeakerSynthesizer)
 from . import plot
@@ -16,6 +17,7 @@ from . import plot
 __all__ = [
     'AmbisonicSynthesizer',
     'BinauralSynthesizer',
+    'LoudspeakerSpectrumEqualization',
     'LoudspeakerSynthesizer',
     'plot',
     'PseudoIntensityVectorAnalyzer',

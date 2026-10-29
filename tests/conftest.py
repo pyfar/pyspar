@@ -1,4 +1,6 @@
 """Fixtures shared by all pyspar tests."""
+import warnings
+
 import numpy as np
 import pyfar as pf
 import pytest
@@ -179,6 +181,27 @@ def dense_analysis():
 def impulse_response():
     """First-order impulse response: direct sound, reflections, tail."""
     return make_impulse_response()
+
+
+def third_octave_bands(x, sampling_rate=48000):
+    """Third-octave bands of `x` from 63 Hz to 16 kHz and their centres.
+
+    The bands of pyfar's reconstructing filter bank, with `x` extended by
+    the length of the filters so that they keep the whole signal.  Returns
+    the bands, ``(n_bands, *x.shape)`` with the extended length, and the
+    exact centre frequencies.
+    """
+    with warnings.catch_warnings():
+        # The returned centre frequencies are deprecated.
+        warnings.simplefilter('ignore')
+        bank = pf.dsp.filter.reconstructing_fractional_octave_bands(
+            None, 3, sampling_rate=sampling_rate)
+    bank = bank[0] if isinstance(bank, tuple) else bank
+    n_taps = np.shape(bank.coefficients)[-1]
+    padded = np.pad(x, [(0, 0)] * (np.ndim(x) - 1) + [(0, n_taps)])
+    bands = bank.process(pf.Signal(padded, sampling_rate)).time
+    centers = 1000 * 10 ** (np.arange(-12, len(bands) - 12) / 10)
+    return bands, centers
 
 
 def layout(azimuth_deg, elevation_deg):
