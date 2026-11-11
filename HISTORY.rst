@@ -10,6 +10,7 @@ Added
 
 Changed
 ^^^^^^^
+* Package description in the README.
 
 Deprecated
 ^^^^^^^^^^
