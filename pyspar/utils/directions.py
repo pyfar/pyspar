@@ -53,9 +53,11 @@ def _replace_missing_doa(doa, pressure):
     Samples without a direction are NaN: for the pseudo-intensity vector
     where the signal is digitally silent within its window or, without
     smoothing, where the omnidirectional channel is exactly zero, which
-    recordings of finite resolution reach near some of its zero crossings.
-    These samples are placed straight ahead, with a warning when they carry
-    more than :math:`10^{-4}` (-40 dB) of the energy of the response.
+    recordings of finite resolution reach near some of its zero crossings;
+    for time differences of arrival at either end not covered by a full
+    frame and in frames without a correlation peak. These samples are placed
+    straight ahead, with a warning when they carry more than
+    :math:`10^{-4}` (-40 dB) of the energy of the response.
     """
     directions = np.atleast_2d(doa.cartesian).reshape(-1, 3).copy()
     missing = np.isnan(directions).any(axis=1)
