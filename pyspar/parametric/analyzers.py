@@ -7,7 +7,8 @@ from itertools import combinations
 import numpy as np
 import pyfar as pf
 from scipy.fft import fft, fftshift, ifft
-from scipy.ndimage import convolve1d
+from scipy.ndimage import convolve1d, median_filter
+from scipy.signal import sosfiltfilt
 from spharpy import SphericalHarmonicSignal
 
 from .classes import AnalyzerBase, TimeResult
@@ -22,7 +23,8 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
     decomposition method does [#]_. The direction is that of the
     pseudo-intensity vector, the product of the omnidirectional channel with
     each of the dipole channels, smoothed by a centred Hann window and
-    normalized.
+    normalized. With a `passband`, the channels are band-passed first and
+    the vector is smoothed by a median [#]_.
 
     Parameters
     ----------
@@ -30,11 +32,18 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
         Length in samples of the window smoothing the vector, centred on
         each sample, an odd number of at least 3. ``None`` does not smooth:
         every sample takes the direction of its own vector.
+    passband : tuple of float, optional
+        Lower and upper edge in Hz of a band-pass applied to the channels
+        before the pseudo-intensity vector is formed, which is then smoothed
+        by a median instead of the Hann window, see Notes. ``None``, the
+        default, estimates from the full band.
 
     Attributes
     ----------
     window_length : int or None
         Window length in samples, as given.
+    passband : tuple of float or None
+        Band-pass edges in Hz.
 
     See Also
     --------
@@ -42,15 +51,27 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
 
     Notes
     -----
-    The Hann window has `window_length` samples without its zero end points and
-    is applied to each Cartesian component. A sample whose smoothed vector
-    vanishes has no direction.
+    Without a `passband`, the Hann window has `window_length` samples without
+    its zero end points and is applied to each Cartesian component. A sample
+    whose smoothed vector vanishes has no direction.
+
+    With a `passband`, the pseudo-intensity vector is formed from the channels
+    after a zero-phase band-pass: a Butterworth band-pass of order four,
+    filtered forward and backward, with the channels extended by 12 samples at
+    both ends. Each Cartesian component of the vector is then smoothed by a
+    median filter of `window_length` samples. Where the smoothed vector
+    vanishes, including the first and last ``window_length // 2`` samples, the
+    direction is the zenith. The pressure and the signal of the result stay
+    full band.
 
     References
     ----------
     .. [#] S. Tervo, J. Patynen, A. Kuusinen and T. Lokki, "Spatial
            decomposition method for room impulse responses," J. Audio Eng.
            Soc., vol. 61, no. 1/2, pp. 17-28, 2013.
+    .. [#] E. Hoffbauer and M. Frank, "Four-directional Ambisonic spatial
+           decomposition method with reduced temporal artifacts," J. Audio
+           Eng. Soc., vol. 70, no. 12, pp. 1002-1014, 2022.
 
     Examples
     --------
@@ -72,7 +93,7 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
     array([0., 1., 0.])
     """
 
-    def __init__(self, window_length):
+    def __init__(self, window_length, passband=None):
         if window_length is not None:
             if (isinstance(window_length, bool)
                     or not isinstance(window_length, (int, np.integer))):
@@ -87,9 +108,22 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
                 raise ValueError(
                     f"window_length is {window_length} but must be odd, so "
                     "that the window is centred.")
+        if passband is not None:
+            passband = self._check_passband(passband)
 
         self.window_length = (None if window_length is None
                               else int(window_length))
+        self.passband = passband
+
+    @staticmethod
+    def _check_passband(passband):
+        """Validate `passband` and return it as a tuple of floats."""
+        edges = tuple(float(edge) for edge in np.ravel(passband))
+        if len(edges) != 2 or not 0 < edges[0] < edges[1]:
+            raise ValueError(
+                f"passband is {passband} but must be two increasing "
+                "frequencies above 0 Hz.")
+        return edges
 
     def __call__(self, signal) -> TimeResult:
         """Analyze `signal` and return an analysis result.
@@ -106,7 +140,8 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
         -------
         result : pyspar.parametric.TimeResult
             Pressure and direction of arrival per sample, and the first-order
-            signal in ACN/N3D. Samples without a direction are NaN.
+            signal in ACN/N3D. Samples without a direction are NaN, or the
+            zenith with a `passband`.
         """
         if (isinstance(signal, pf.Signal)
                 and not isinstance(signal, SphericalHarmonicSignal)):
@@ -127,20 +162,22 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
 
         first_order = SphericalHarmonicSignal(
             data.T, signal.sampling_rate, 'real', 'N3D', 'ACN', False)
-        doa = self._pseudo_intensity_vector(data)
+        doa = self._pseudo_intensity_vector(data, signal.sampling_rate)
 
         return TimeResult(
             pressure=pf.Signal(data[:, 0].copy(), signal.sampling_rate),
             doa=pf.Coordinates(doa[:, 0], doa[:, 1], doa[:, 2]),
             signal=first_order)
 
-    def _pseudo_intensity_vector(self, data):
+    def _pseudo_intensity_vector(self, data, sampling_rate):
         """Return unit Cartesian directions of the pseudo-intensity vector.
 
         Parameters
         ----------
         data : numpy.ndarray, shape (n_samples, 4)
             First-order time data in ACN/N3D.
+        sampling_rate : float
+            Sampling rate of `data` in Hz.
 
         Returns
         -------
@@ -150,18 +187,49 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
             signal is digitally silent within the window and, without
             smoothing, where the omnidirectional channel is exactly zero,
             which recordings of finite resolution reach near some of its
-            zero crossings.
+            zero crossings. With a `passband`, a vanishing vector gives the
+            zenith instead.
         """
-        # ACN order is [W, Y, Z, X], the vector is [W X, W Y, W Z].
-        vector = data[:, [3, 1, 2]] * data[:, :1]
-        if self.window_length is not None:
-            # Direct, not FFT, convolution: a vanishing vector stays
-            # exactly zero.
-            window = np.hanning(self.window_length + 2)[1:-1]
-            vector = convolve1d(vector, window, axis=0, mode='constant')
+        if self.passband is not None:
+            vector = self._band_limited_vector(data, sampling_rate)
+        else:
+            # ACN order is [W, Y, Z, X], the vector is [W X, W Y, W Z].
+            vector = data[:, [3, 1, 2]] * data[:, :1]
+            if self.window_length is not None:
+                # Direct, not FFT, convolution: a vanishing vector stays
+                # exactly zero.
+                window = np.hanning(self.window_length + 2)[1:-1]
+                vector = convolve1d(vector, window, axis=0, mode='constant')
         norm = np.linalg.norm(vector, axis=1, keepdims=True)
-        return np.divide(vector, norm, out=np.full_like(vector, np.nan),
-                         where=norm > 0)
+        doa = np.divide(vector, norm, out=np.full_like(vector, np.nan),
+                        where=norm > 0)
+        if self.passband is not None:
+            # A vanishing vector points to the zenith: zero azimuth and
+            # zero colatitude.
+            doa[~np.any(vector != 0, axis=1)] = (0.0, 0.0, 1.0)
+        return doa
+
+    def _band_limited_vector(self, data, sampling_rate):
+        """Band-passed, median-smoothed pseudo-intensity vector."""
+        if self.passband[1] >= sampling_rate / 2:
+            raise ValueError(
+                f"passband is {self.passband} but its upper edge must be "
+                f"below half the sampling rate, {sampling_rate / 2} Hz.")
+        bandpass = pf.dsp.filter.butterworth(
+            None, 2, self.passband, 'bandpass', sampling_rate).coefficients[0]
+        # The signal is extended by 12 samples at both ends, three times the
+        # order of the band-pass.
+        filtered = sosfiltfilt(bandpass, data, axis=0,
+                               padlen=min(12, len(data) - 1))
+
+        vector = filtered[:, [3, 1, 2]] * filtered[:, :1]
+        if self.window_length is not None:
+            vector = median_filter(vector, size=(self.window_length, 1),
+                                   mode='constant')
+            half = self.window_length // 2
+            vector[:half] = 0.0
+            vector[len(vector) - half:] = 0.0
+        return vector
 
 
 class TimeDifferenceOfArrivalAnalyzer(AnalyzerBase):

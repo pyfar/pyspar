@@ -12,10 +12,12 @@ from .classes import (
 )
 from .analyzers import (
     PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
-from .synthesizers import BinauralSynthesizer, LoudspeakerSynthesizer
+from .synthesizers import (
+    AmbisonicSynthesizer, BinauralSynthesizer, LoudspeakerSynthesizer)
 
 
 __all__ = [
+    'AmbisonicSynthesizer',
     'AnalyzerBase',
     'BinauralSynthesizer',
     'LoudspeakerSynthesizer',
