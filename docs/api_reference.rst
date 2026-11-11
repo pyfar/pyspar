@@ -10,6 +10,15 @@ For examples on how to use pyspar refer to the notebooks in the
 `examples gallery`_ and the documentation on classes and modules below.
 
 
+Classes
+-------
+
+.. toctree::
+   :maxdepth: 1
+
+   classes/pyspar.parametric.classes
+   classes/pyspar.parametric.analyzers
+
 Modules
 -------
 
@@ -17,6 +26,7 @@ Modules
    :maxdepth: 1
 
    modules/pyspar
+   modules/pyspar.parametric
 
 
 .. _examples gallery: https://pyfar-gallery.readthedocs.io/en/latest/examples_gallery.html
