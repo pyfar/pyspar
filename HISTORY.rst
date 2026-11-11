@@ -19,6 +19,8 @@ Added
   in the order of their channel numbers, returning the imaginary
   loudspeakers on request with ``return_imaginary``, and plotting the
   layout with ``plot=True``.
+* Crossover to low-frequency effects (LFE) channels in
+  ``LoudspeakerSynthesizer``, set by ``lfe_channels`` and ``lfe_cutoff``.
 
 Changed
 ^^^^^^^
