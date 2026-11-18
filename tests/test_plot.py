@@ -236,10 +236,21 @@ def test_spatio_temporal_names_the_directions_in_the_tick_labels(impulses):
     ax = plot.spatio_temporal(impulses, plane='median')
 
     labels = [label.get_text() for label in ax.get_xticklabels()]
-    assert labels[0] == '0$^\\circ$ Front'
-    assert labels[3] == 'Top\n90$^\\circ$'
-    assert labels[6] == 'Back 180$^\\circ$'
-    assert labels[9] == '-90$^\\circ$\nBottom'
+    assert labels[0] == '0\N{DEGREE SIGN}'
+    assert labels[3] == 'Top\n90\N{DEGREE SIGN}\n'
+    assert labels[6] == '180\N{DEGREE SIGN}'
+    assert labels[9] == '\n-90\N{DEGREE SIGN}\nBottom'
+    assert [(text.get_text(), text.get_rotation()) for text in ax.texts] == [
+        ('Front', 270), ('Back', 90)]
+
+
+def test_spatio_temporal_leaves_the_direction_names_out(impulses):
+    ax = plot.spatio_temporal(impulses, plane='median',
+                              direction_names=False)
+
+    assert [label.get_text() for label in ax.get_xticklabels()] == [
+        f"{angle}\N{DEGREE SIGN}" for angle in
+        (0, 30, 60, 90, 120, 150, 180, -150, -120, -90, -60, -30)]
     assert not ax.texts
 
 

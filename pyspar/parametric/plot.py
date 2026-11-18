@@ -208,8 +208,8 @@ def _beside_the_sphere(cax, map_ax):
 def spatio_temporal(result, plane='lateral', integration='forward',
                     times=(5, 10, 15, 20, 50, 80, 200, 2000), resolution=1,
                     dynamic_range=45, level_spacing=6, angle_spacing=30,
-                    smoothing=3, fill=False, colors=None, ax=None,
-                    style='light', **kwargs):
+                    direction_names=True, smoothing=3, fill=False,
+                    colors=None, ax=None, style='light', **kwargs):
     """Plot the directional energy in cumulative time windows in a plane.
 
     For each of `times`, the energy of the pressure in a rectangular time
@@ -251,6 +251,10 @@ def spatio_temporal(result, plane='lateral', integration='forward',
         marked. The default is ``6``.
     angle_spacing : float, optional
         Spacing of the angular grid in degrees. The default is ``30``.
+    direction_names : bool, optional
+        Name the directions at 0, 90, 180 and -90 degrees, for example
+        front, left, back and right in the lateral plane. The default is
+        ``True``.
     smoothing : float, optional
         Width in degrees of the moving average applied to each curve around
         the circle. The default is ``3``.
@@ -348,19 +352,31 @@ def spatio_temporal(result, plane='lateral', integration='forward',
         levels, labels = _level_grid(level_spacing, dynamic_range)
         shown = levels > -dynamic_range
         ax.set_rgrids(levels[shown], np.array(labels)[shown], angle=75)
-        # The names of the four directions are part of the tick labels, so
-        # that a title is placed above them.
+        # The names at the top and bottom are part of the tick labels, so
+        # that a title is placed above them. A label is centred on its tick;
+        # the empty line keeps the degrees as far out as the others.
         names = dict(zip((0, 90, 180, 270), _PLANES[plane], strict=True))
-        placement = {0: '{degree} {name}', 90: '{name}\n{degree}',
-                     180: '{name} {degree}', 270: '{degree}\n{name}'}
+        placement = {90: '{name}\n{degree}\n', 270: '\n{degree}\n{name}'}
         grid = np.arange(0, 360, angle_spacing)
         labels = []
         for angle in grid:
-            degree = f"{(angle - 360 if angle > 180 else angle):g}$^\\circ$"
+            degree = (f"{(angle - 360 if angle > 180 else angle):g}"
+                      "\N{DEGREE SIGN}")
             labels.append(placement[angle].format(
-                degree=degree, name=names[angle]) if angle in names
-                else degree)
-        ax.set_thetagrids(grid, labels)
+                degree=degree, name=names[angle])
+                if direction_names and angle in placement else degree)
+        _, ticks = ax.set_thetagrids(grid, labels)
+        # 0.4 of the font size is the gap between the lines of a label, as
+        # between the degrees and the names at the top and bottom.
+        gap = 0.4 * ticks[0].get_fontsize()
+        for angle, side in ((0, 1), (180, -1)):
+            if direction_names and angle in grid:
+                ax.annotate(
+                    names[angle], xy=((1 + side) / 2, 0.5),
+                    xycoords=ticks[list(grid).index(angle)],
+                    xytext=(gap * side, 0), textcoords='offset points',
+                    rotation=-90 * side, ha='left' if side > 0 else 'right',
+                    va='center')
         ax.legend(handles, _labels(times, integration, results, fs),
                   loc='upper left', bbox_to_anchor=(1.1, 1))
 
