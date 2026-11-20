@@ -2,6 +2,8 @@
 import numpy as np
 import pyfar as pf
 import pytest
+from conftest import sh_signal
+from spharpy import SphericalHarmonicSignal
 
 from pyspar import parametric
 
@@ -116,3 +118,36 @@ def test_time_result_error_if_the_sampling_rates_disagree(frontal_impulse):
             match='sampling rate of 48000 Hz but the pressure 44100 Hz'):
         parametric.TimeResult(pressure=silence(sampling_rate=44100),
                               doa=doa, signal=frontal_impulse)
+
+
+@pytest.mark.parametrize(('attribute', 'value'), [
+    ('channel_convention', 'FuMa'), ('normalization', 'maxN'),
+    ('condon_shortley', True)])
+def test_time_result_error_for_another_convention_of_the_signal(
+        frontal_impulse, attribute, value):
+    doa = pf.Coordinates(*np.ones((3, 64)))
+    setattr(frontal_impulse, attribute, value)
+
+    with pytest.raises(ValueError, match='must be real, in ACN'):
+        parametric.TimeResult(pressure=silence(), doa=doa,
+                              signal=frontal_impulse)
+
+
+def test_time_result_error_if_the_basis_of_the_signal_is_complex():
+    doa = pf.Coordinates(*np.ones((3, 64)))
+    signal = SphericalHarmonicSignal(
+        np.zeros((4, 64), dtype=complex), 48000, 'complex', 'N3D', 'ACN',
+        False, is_complex=True)
+
+    with pytest.raises(ValueError, match='must be real, in ACN'):
+        parametric.TimeResult(pressure=silence(), doa=doa, signal=signal)
+
+
+@pytest.mark.parametrize('shape', [(1, 64), (2, 4, 64)])
+def test_time_result_error_if_the_signal_is_not_one_first_order_signal(shape):
+    doa = pf.Coordinates(*np.ones((3, 64)))
+
+    with pytest.raises(ValueError, match='one spherical harmonic signal of '
+                                         'order one or higher'):
+        parametric.TimeResult(pressure=silence(), doa=doa,
+                              signal=sh_signal(np.zeros(shape)))
