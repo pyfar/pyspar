@@ -103,13 +103,9 @@ def test_window_smooths_the_vector_not_the_channels():
     assert np.isnan(doa[15:]).all()
 
 
-@pytest.mark.parametrize(('normalization', 'channel_convention'), [
-    ('SN3D', 'ACN'), ('maxN', 'FuMa')])
-def test_result_does_not_depend_on_the_input_convention(
-        impulse_response, normalization, channel_convention):
+def test_result_does_not_depend_on_the_normalization(impulse_response):
     converted = impulse_response.copy()
-    converted.normalization = normalization
-    converted.channel_convention = channel_convention
+    converted.normalization = 'SN3D'
     analyzer = parametric.PseudoIntensityVectorAnalyzer(window_length=5)
 
     reference = analyzer(impulse_response)
@@ -223,19 +219,21 @@ def test_error_if_the_input_has_no_dipole_channels():
 
 def test_error_if_the_basis_is_complex():
     signal = SphericalHarmonicSignal(
-        np.zeros((4, 16), dtype=complex), 48000, 'complex', 'N3D', 'ACN', True,
-        is_complex=True)
+        np.zeros((4, 16), dtype=complex), 48000, 'complex', 'N3D', 'ACN',
+        False, is_complex=True)
 
-    with pytest.raises(ValueError, match='real spherical harmonic basis'):
+    with pytest.raises(ValueError, match='must be real, in ACN'):
         parametric.PseudoIntensityVectorAnalyzer(None)(signal)
 
 
-def test_error_if_the_condon_shortley_phase_is_included():
-    signal = SphericalHarmonicSignal(
-        np.zeros((4, 16)), 48000, 'real', 'N3D', 'ACN', True)
+@pytest.mark.parametrize(('attribute', 'value'), [
+    ('channel_convention', 'FuMa'), ('normalization', 'maxN'),
+    ('condon_shortley', True)])
+def test_error_for_another_convention(impulse_response, attribute, value):
+    setattr(impulse_response, attribute, value)
 
-    with pytest.raises(ValueError, match='Condon-Shortley'):
-        parametric.PseudoIntensityVectorAnalyzer(None)(signal)
+    with pytest.raises(ValueError, match='must be real, in ACN'):
+        parametric.PseudoIntensityVectorAnalyzer(None)(impulse_response)
 
 
 def test_error_if_more_than_one_signal_is_given():
