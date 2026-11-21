@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import warnings
+from itertools import combinations
 
 import numpy as np
 import pyfar as pf
@@ -32,6 +33,10 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
     ----------
     window_length : int or None
         Window length in samples, as given.
+
+    See Also
+    --------
+    TimeDifferenceOfArrivalAnalyzer
 
     Notes
     -----
@@ -101,6 +106,14 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
             Pressure and direction of arrival per sample, and the first-order
             signal in ACN/N3D. Samples without a direction are NaN.
         """
+        if (isinstance(signal, pf.Signal)
+                and not isinstance(signal, SphericalHarmonicSignal)):
+            raise TypeError(
+                f"{type(self).__name__} requires a "
+                "spharpy.SphericalHarmonicSignal; got "
+                f"{type(signal).__name__}. Use "
+                "TimeDifferenceOfArrivalAnalyzer for the capsule signals "
+                "of an open microphone array.")
         if not isinstance(signal, SphericalHarmonicSignal):
             raise TypeError(
                 f"{type(self).__name__} requires a "
@@ -176,3 +189,241 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
         norm = np.linalg.norm(vector, axis=1, keepdims=True)
         return np.divide(vector, norm, out=np.full_like(vector, np.nan),
                          where=norm > 0)
+
+
+class TimeDifferenceOfArrivalAnalyzer(AnalyzerBase):
+    """Estimate directions of arrival by time differences of arrival.
+
+    In a Hann window centred on each sample, the time difference of arrival
+    of every capsule pair of an open microphone array is the lag of the peak
+    of their cross-correlation, the generalized correlation method with
+    direct weighting, refined by an exponential fit. The direction of arrival
+    is the unconstrained least-squares solution for the plane-wave model,
+    ``n = -m / ||m||`` with the slowness vector ``m = V^+ tau``, the
+    pseudo-inverse ``V^+`` of the capsule position differences and the time
+    differences ``tau`` [#]_ [#]_. It is scaled to an image-source position
+    by the distance the sound travels up to the sample.
+
+    Parameters
+    ----------
+    microphones : pyfar.Coordinates
+        Capsule positions in meters, one per channel of the analyzed signal.
+        They must span all three dimensions.
+    reference_channel : int
+        Index of the capsule whose signal is taken as the pressure, ideally
+        the capsule at the geometric centre of the array.
+    window_length : int, optional
+        Length of the analysis frame in samples, an even number of at least
+        the minimum the array needs, ``2 ceil(d_max fs / c) + 8`` for the
+        largest distance ``d_max`` between two capsules, the speed of sound
+        ``c``, :py:data:`pyfar.constants.reference_speed_of_sound`, and the
+        sampling rate ``fs`` of the signal. ``None``, the default, uses that
+        minimum: 22 samples for a largest capsule distance of 5 cm at 48 kHz.
+
+    Attributes
+    ----------
+    microphones : pyfar.Coordinates
+        Capsule positions.
+    reference_channel : int
+        Capsule used as the pressure.
+    window_length : int or None
+        Window length in samples, as given.
+
+    See Also
+    --------
+    PseudoIntensityVectorAnalyzer
+
+    Notes
+    -----
+    The Hann window spans the analysis frame of ``L`` samples, `window_length`
+    or the minimum of the array, without its zero end points; sample ``k``
+    takes the estimate of the frame from ``k - L / 2`` to ``k + L / 2 - 1``.
+    The peak is searched over the lags the largest capsule distance allows,
+    and the sub-sample shift is
+    ``(ln R(1) - ln R(-1)) / (4 ln R(0) - 2 ln R(-1) - 2 ln R(1))`` with the
+    correlation ``R`` at the peak and its two neighbours. The distance is
+    ``c (k + 1) / fs`` for the zero-based sample ``k``.
+
+    The first and last ``L / 2`` samples, and frames in which the
+    correlation of any capsule pair has no positive peak, have no direction
+    and are NaN. The pressure is the signal of `reference_channel` as
+    measured.
+
+    References
+    ----------
+    .. [#] S. Tervo, J. Patynen, A. Kuusinen and T. Lokki, "Spatial
+           decomposition method for room impulse responses," J. Audio Eng.
+           Soc., vol. 61, no. 1/2, pp. 17-28, 2013.
+    .. [#] J. Patynen, S. Tervo and T. Lokki, "Analysis of concert hall
+           acoustics via visualizations of time-frequency and spatiotemporal
+           responses," J. Acoust. Soc. Am., vol. 133, no. 2, pp. 842-857,
+           2013.
+
+    Examples
+    --------
+    Estimate the direction of a plane wave arriving from the left at six
+    capsules on the axes, placed so that the wave reaches them at whole
+    samples.
+
+    >>> import numpy as np
+    >>> import pyfar as pf
+    >>> import pyspar
+    >>> radius = 4 * pf.constants.reference_speed_of_sound / 48000
+    >>> axes = np.vstack([np.eye(3), -np.eye(3)])
+    >>> microphones = pf.Coordinates(*(radius * axes).T)
+    >>> data = np.zeros((6, 256))
+    >>> data[np.arange(6), 100 - 4 * axes[:, 1].astype(int)] = 1
+    >>> analyzer = pyspar.parametric.TimeDifferenceOfArrivalAnalyzer(
+    ...     microphones, reference_channel=2)
+    >>> result = analyzer(pf.Signal(data, 48000))
+    >>> np.round(result.doa.cartesian[100] / result.doa.radius[100], 12)
+    array([0., 1., 0.])
+    """
+
+    def __init__(self, microphones, reference_channel, window_length=None):
+        if window_length is not None and (
+                isinstance(window_length, bool)
+                or not isinstance(window_length, (int, np.integer))):
+            raise TypeError(
+                "window_length must be an integer or None; got "
+                f"{type(window_length).__name__}.")
+        self.microphones = microphones
+        self.reference_channel = reference_channel
+        self.window_length = (None if window_length is None
+                              else int(window_length))
+
+        if not isinstance(microphones, pf.Coordinates):
+            raise TypeError(
+                "microphones must be a pyfar.Coordinates; got "
+                f"{type(microphones).__name__}.")
+        positions = np.atleast_2d(microphones.cartesian).reshape(-1, 3)
+        n_microphones = len(positions)
+        pairs = np.array(list(combinations(range(n_microphones), 2)),
+                         dtype=int).reshape(-1, 2)
+        differences = positions[pairs[:, 0]] - positions[pairs[:, 1]]
+        if len(differences) < 3 or np.linalg.matrix_rank(differences) < 3:
+            raise ValueError(
+                "microphones must span all three dimensions, got "
+                f"{n_microphones} capsules that do not.")
+        if (isinstance(reference_channel, bool)
+                or not isinstance(reference_channel, (int, np.integer))):
+            raise TypeError(
+                "reference_channel must be an integer; got "
+                f"{type(reference_channel).__name__}.")
+        if not 0 <= reference_channel < n_microphones:
+            raise ValueError(
+                f"reference_channel is {reference_channel} but must be the "
+                f"index of one of the {n_microphones} capsules.")
+
+        self._pairs = pairs
+        self._inverse = np.linalg.pinv(differences)
+        self._spacing = np.max(np.linalg.norm(differences, axis=1))
+
+    def __call__(self, signal) -> TimeResult:
+        """Analyze `signal` and return an analysis result.
+
+        Parameters
+        ----------
+        signal : pyfar.Signal
+            Capsule signals with ``cshape (n_microphones,)``.
+
+        Returns
+        -------
+        result : pyspar.parametric.TimeResult
+            Pressure, image-source position per sample, and the capsule
+            signals. Samples without a direction are NaN.
+        """
+        if (not isinstance(signal, pf.Signal)
+                or isinstance(signal, SphericalHarmonicSignal)):
+            raise TypeError(
+                f"{type(self).__name__} requires the capsule signals as a "
+                f"pyfar.Signal; got {type(signal).__name__}. Use "
+                "PseudoIntensityVectorAnalyzer for a spherical harmonic "
+                "signal.")
+        if signal.cshape != (self.microphones.csize,):
+            raise ValueError(
+                f"signal has cshape {signal.cshape} but the array has "
+                f"{self.microphones.csize} capsules.")
+        fs = float(signal.sampling_rate)
+        minimum = 2 * int(np.ceil(
+            self._spacing / pf.constants.reference_speed_of_sound * fs)) + 8
+        frame = minimum if self.window_length is None else self.window_length
+        if frame < minimum:
+            raise ValueError(
+                f"window_length is {self.window_length} but the array needs "
+                f"at least {minimum} samples at {fs:g} Hz.")
+        if frame % 2:
+            # The direction is assigned to the centre of the frame, which
+            # falls on a sample only for an even length.
+            raise ValueError(
+                f"window_length is {self.window_length} but the frame must "
+                "be even.")
+
+        data = np.asarray(signal.time, dtype=float).T
+        if data.shape[0] <= frame:
+            raise ValueError(
+                f"signal has {data.shape[0]} samples, fewer than the "
+                f"{frame}-sample analysis frame.")
+
+        return TimeResult(
+            pressure=pf.Signal(data[:, self.reference_channel].copy(), fs),
+            doa=pf.Coordinates(*self._image_sources(data, fs, frame).T),
+            signal=signal.copy())
+
+    def _image_sources(self, data, fs, frame):
+        """Image-source position per sample, ``(n_samples, 3)``.
+
+        The direction is scaled by the distance travelled since the start of
+        the response. The first and last half frame, and frames in which the
+        correlation of any pair has no peak, such as silent ones, are NaN.
+        """
+        c = pf.constants.reference_speed_of_sound
+        pairs = self._pairs
+
+        # A symmetric Hann window without its zero end points.
+        window = pf.dsp.time_window(pf.Signal(
+            np.ones(frame + 2), fs), (0, frame + 1)).time[0, 1:-1]
+        max_delay = int(np.ceil(self._spacing / c * fs)) + 1
+        centre = frame // 2
+        # pyfar.dsp.correlate puts the zero lag one sample before the centre.
+        zero_lag = centre - 1
+        region = np.arange(zero_lag - max_delay, zero_lag + max_delay + 2)
+
+        n_samples = data.shape[0]
+        n_frames = n_samples - frame
+        positions = np.full((n_samples, 3), np.nan)
+
+        # Frames per batch; it bounds memory only, not the result.
+        batch = 8192
+        for start in range(0, n_frames, batch):
+            frames = np.arange(start, min(start + batch, n_frames))
+            segments = pf.Signal(np.moveaxis(
+                window[:, None] * data[frames[:, None] + np.arange(frame)],
+                1, -1), fs)                                   # (F, M, N)
+            correlation = pf.dsp.correlate(
+                segments[:, pairs[:, 0]], segments[:, pairs[:, 1]],
+                mode='cyclic').time                           # (F, P, N)
+            # Only positive correlation is accepted.
+            correlation = np.maximum(correlation, 2 * np.finfo(float).eps)
+
+            peak = np.argmax(correlation[..., region], axis=-1) + region[0]
+            at_peak, before, after = (
+                np.take_along_axis(correlation, peak[..., None] + shift,
+                                   axis=-1)[..., 0]
+                for shift in (0, -1, 1))
+
+            # Exponential interpolation of the peak over -1, 0, +1 samples.
+            with np.errstate(divide='ignore', invalid='ignore'):
+                fraction = (np.log(after) - np.log(before)) / (
+                    4 * np.log(at_peak) - 2 * np.log(before)
+                    - 2 * np.log(after))
+                delay = (peak - zero_lag + fraction) / fs
+                direction = -(self._inverse @ delay.T)             # (3, F)
+                direction /= np.linalg.norm(direction, axis=0)
+
+            distance = (frames + centre + 1) / fs * c
+            estimate = (direction * distance).T
+            estimate[~np.all(np.isfinite(estimate), axis=1)] = np.nan
+            positions[frames + centre] = estimate
+
+        return positions

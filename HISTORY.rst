@@ -23,6 +23,9 @@ Added
   ``LoudspeakerSynthesizer``, set by ``lfe_channels`` and ``lfe_cutoff``.
 * ``BinauralSynthesizer`` rendering an analysis to ear signals through
   virtual loudspeakers.
+* ``TimeDifferenceOfArrivalAnalyzer`` estimating one direction of arrival per
+  sample from the time differences of arrival at an open microphone array,
+  with the frame of the array by default and an error for shorter ones.
 
 Changed
 ^^^^^^^

@@ -10,7 +10,8 @@ from .classes import (
     SynthesizerBase,
     TimeResult,
 )
-from .analyzers import PseudoIntensityVectorAnalyzer
+from .analyzers import (
+    PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
 from .synthesizers import BinauralSynthesizer, LoudspeakerSynthesizer
 
 
@@ -21,5 +22,6 @@ __all__ = [
     'Postprocessor',
     'PseudoIntensityVectorAnalyzer',
     'SynthesizerBase',
+    'TimeDifferenceOfArrivalAnalyzer',
     'TimeResult',
 ]
