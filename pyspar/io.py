@@ -130,13 +130,12 @@ def load_loudspeaker_array(json_path, return_imaginary=False, plot=False):
     # Normalize the azimuth to [-180, 180) regardless of the convention of
     # the file; some exports store it in [0, 360).
     locations[:, 0] = (locations[:, 0] + 180) % 360 - 180
-    azimuth, elevation = np.deg2rad(locations[:, :2]).T
+    azimuth, elevation = pf.deg2rad(locations)[:, :2].T
     count = len(speakers)
 
     if plot:
-        points = np.column_stack([np.cos(elevation) * np.cos(azimuth),
-                                  np.cos(elevation) * np.sin(azimuth),
-                                  np.sin(elevation)])
+        points = pf.Coordinates.from_spherical_elevation(
+            azimuth, elevation, 1).cartesian
         with pf.plot.context():
             ax = _map_axes(None)
             _draw_loudspeakers(ax, points[:count], points[count:])

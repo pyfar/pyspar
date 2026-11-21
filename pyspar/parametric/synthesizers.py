@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import numpy as np
 import pyfar as pf
-from scipy.signal import sosfiltfilt
 from spharpy import SphericalHarmonicSignal
 from spharpy.spherical import spherical_harmonic_basis_real
 
@@ -148,10 +147,7 @@ class LoudspeakerSynthesizer(SynthesizerBase):
 
         # TimeResult guarantees one direction per pressure sample.
         pressure = result.pressure.time[0]
-        directions = _replace_missing_doa(result.doa, pressure)
-
-        doa = pf.Coordinates(directions[:, 0], directions[:, 1],
-                             directions[:, 2])
+        doa = _replace_missing_doa(result.doa, pressure)
         n_samples = len(pressure)
 
         # The LFE channels are left out of the panning.
@@ -160,8 +156,7 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         data = np.zeros((n_samples, len(layout)))
 
         if self.dimensionality == 2:
-            elevation = np.arcsin(np.clip(directions[:, 2], -1, 1))
-            pressure = pressure * np.cos(elevation)
+            pressure = pressure * np.cos(doa.elevation)
         index = _nearest_directions(pf.Coordinates(*layout[panned].T), doa)
         data[np.arange(n_samples), panned[index]] = pressure
 
@@ -256,24 +251,24 @@ def _lfe_crossover(signal, loudspeakers, lfe_channels, cutoff):
         raise ValueError(
             f"lfe_cutoff is {cutoff} Hz but must be below half the sampling "
             f"rate, {sampling_rate / 2} Hz.")
-    low, high = (
-        pf.dsp.filter.butterworth(
-            None, 3, cutoff, btype, sampling_rate).coefficients[0]
-        for btype in ('lowpass', 'highpass'))
+    n_taps = 2 ** int(np.ceil(np.log2(sampling_rate)))
+
+    def zero_phase(btype, data):
+        fir = pf.dsp.zero_phase(pf.dsp.filter.butterworth(
+            None, 3, cutoff, btype, sampling_rate).impulse_response(n_taps))
+        fir = pf.dsp.time_shift(fir * fir, n_taps // 2)
+        return pf.dsp.convolve(
+            pf.Signal(data.T, sampling_rate), fir, method='fft').time[
+                ..., n_taps // 2:n_taps // 2 + len(data)].T
 
     layout = np.atleast_2d(loudspeakers.cartesian).reshape(-1, 3)
     lfe = list(lfe_channels)
     others = np.setdiff1d(np.arange(len(layout)), lfe)
     data = np.asarray(signal.time, dtype=float).T
-    # The signals are extended by 9 samples at both ends, three times the
-    # filter order.
-    padding = min(9, len(data) - 1)
     split = np.zeros_like(data)
-    split[:, others] = sosfiltfilt(
-        high, data[:, others], axis=0, padlen=padding)
-    split[:, lfe] = sosfiltfilt(
-        low, data[:, others], axis=0, padlen=padding) @ _lfe_shares(
-            layout, lfe_channels)
+    split[:, others] = zero_phase('highpass', data[:, others])
+    split[:, lfe] = zero_phase('lowpass', data[:, others]) @ _lfe_shares(
+        layout, lfe_channels)
     return pf.Signal(split.T, sampling_rate)
 
 
@@ -593,18 +588,13 @@ class AmbisonicSynthesizer(SynthesizerBase):
                 "pyspar.parametric.TimeResult; got "
                 f"{type(result).__name__}.")
 
-        directions = _replace_missing_doa(result.doa, result.pressure.time[0])
-        doa = pf.Coordinates(directions[:, 0], directions[:, 1],
-                             directions[:, 2])
+        doa = _replace_missing_doa(result.doa, result.pressure.time[0])
         basis = spherical_harmonic_basis_real(
             self.order, doa, normalization=self.normalization)
 
         # Divided by the order-zero harmonic, 1/sqrt(4 pi), so that W stays the
         # pressure.
-        omni = spherical_harmonic_basis_real(
-            0, pf.Coordinates(1.0, 0.0, 0.0),
-            normalization=self.normalization)[0, 0]
-        data = (result.pressure.time[0] / omni)[:, None] * basis
+        data = (result.pressure.time[0] / basis[:, 0])[:, None] * basis
 
         return SphericalHarmonicSignal(
             data.T, result.sampling_rate, 'real', self.normalization, 'ACN',

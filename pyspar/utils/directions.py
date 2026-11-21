@@ -45,8 +45,8 @@ def _replace_missing_doa(doa, pressure):
 
     Returns
     -------
-    directions : numpy.ndarray, shape (n_samples, 3)
-        Unit Cartesian directions.
+    directions : pyfar.Coordinates, cshape (n_samples,)
+        Unit directions.
 
     Notes
     -----
@@ -74,4 +74,5 @@ def _replace_missing_doa(doa, pressure):
             stacklevel=3)
 
     directions[missing] = [1.0, 0.0, 0.0]
-    return directions / np.linalg.norm(directions, axis=1, keepdims=True)
+    return pf.Coordinates(*(
+        directions / np.linalg.norm(directions, axis=1, keepdims=True)).T)
