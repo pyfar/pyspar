@@ -78,8 +78,7 @@ class TimeResult:
                 "samples.")
         # pyfar reads a zero vector as straight ahead, so it cannot mark a
         # sample without a direction.
-        norm = np.linalg.norm(
-            np.atleast_2d(self.doa.cartesian).reshape(-1, 3), axis=1)
+        norm = np.atleast_1d(self.doa.radius)
         if np.any(norm == 0):
             raise ValueError(
                 f"doa has {int(np.sum(norm == 0))} zero vectors; "
