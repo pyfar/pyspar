@@ -158,8 +158,7 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         data = np.zeros((n_samples, len(layout)))
 
         if self.dimensionality == 2:
-            elevation = np.arcsin(np.clip(directions[:, 2], -1, 1))
-            pressure = pressure * np.cos(elevation)
+            pressure = pressure * np.cos(doa.elevation)
         index = _nearest_directions(pf.Coordinates(*layout[panned].T), doa)
         data[np.arange(n_samples), panned[index]] = pressure
 
