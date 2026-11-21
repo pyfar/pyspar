@@ -107,6 +107,38 @@ LAYOUT_HORIZONTAL = np.array([[0, 0], [30, 0], [-30, 0], [110, 0],
                               [-110, 0]], float)
 LAYOUT_SURROUND = np.array([[0, 0], [60, 0], [120, 0], [180, 0], [-120, 0],
                             [-60, 0], [0, 90], [0, -90]], float)
+# Layouts with LFE channels and the indices of those: 5.1 and 5.2.  The
+# center loudspeaker comes before the LFE channels, and of the two LFE
+# channels the left one comes first.
+LAYOUT_LFE_ONE = np.array([[30, 0], [-30, 0], [0, 0], [0, -30], [110, 0],
+                           [-110, 0]], float)
+LFE_ONE = (3,)
+LAYOUT_LFE_TWO = np.array([[30, 0], [-30, 0], [0, 0], [110, 0], [-110, 0],
+                           [45, -30], [-45, -30]], float)
+LFE_TWO = (5, 6)
+
+
+@pytest.fixture
+def noise_between_silences():
+    """Analysis result of decaying noise between long silences.
+
+    Noise from a new direction at every sample, 4000 silent samples before it
+    and 3500 after.  Filtered forward and backward, the low frequencies of a
+    sound begin before it and last after it, some 60 ms at 80 Hz; the
+    silences keep that inside the signal, where the ends would cut it off.
+    """
+    from pyspar import parametric
+    rng = np.random.default_rng(0)
+    n_samples = 10000
+    pressure = np.zeros(n_samples)
+    pressure[4000:6500] = (rng.standard_normal(2500)
+                           * np.exp(-np.arange(2500) / 300))
+    doa = pf.Coordinates.from_spherical_elevation(
+        rng.uniform(-np.pi, np.pi, n_samples),
+        np.arcsin(rng.uniform(-1, 1, n_samples)), np.ones(n_samples))
+    return parametric.TimeResult(
+        pressure=pf.Signal(pressure, 48000), doa=doa,
+        signal=pf.Signal(pressure, 48000))
 
 
 @pytest.fixture
