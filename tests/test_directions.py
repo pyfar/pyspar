@@ -18,7 +18,7 @@ def test_missing_directions_point_straight_ahead():
     directions = _replace_missing_doa(doa([[0, 2, 0], [np.nan] * 3]),
                                       np.array([1.0, 0.0]))
 
-    npt.assert_array_equal(directions, [[0, 1, 0], [1, 0, 0]])
+    npt.assert_array_equal(directions.cartesian, [[0, 1, 0], [1, 0, 0]])
 
 
 def test_warns_above_minus_40_db_of_the_energy():
@@ -42,4 +42,4 @@ def test_silent_response_does_not_warn():
         directions = _replace_missing_doa(doa([[np.nan] * 3] * 2),
                                           np.zeros(2))
 
-    npt.assert_array_equal(directions, [[1, 0, 0], [1, 0, 0]])
+    npt.assert_array_equal(directions.cartesian, [[1, 0, 0], [1, 0, 0]])

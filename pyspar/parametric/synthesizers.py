@@ -147,10 +147,7 @@ class LoudspeakerSynthesizer(SynthesizerBase):
 
         # TimeResult guarantees one direction per pressure sample.
         pressure = result.pressure.time[0]
-        directions = _replace_missing_doa(result.doa, pressure)
-
-        doa = pf.Coordinates(directions[:, 0], directions[:, 1],
-                             directions[:, 2])
+        doa = _replace_missing_doa(result.doa, pressure)
         n_samples = len(pressure)
 
         # The LFE channels are left out of the panning.
@@ -591,18 +588,13 @@ class AmbisonicSynthesizer(SynthesizerBase):
                 "pyspar.parametric.TimeResult; got "
                 f"{type(result).__name__}.")
 
-        directions = _replace_missing_doa(result.doa, result.pressure.time[0])
-        doa = pf.Coordinates(directions[:, 0], directions[:, 1],
-                             directions[:, 2])
+        doa = _replace_missing_doa(result.doa, result.pressure.time[0])
         basis = spherical_harmonic_basis_real(
             self.order, doa, normalization=self.normalization)
 
         # Divided by the order-zero harmonic, 1/sqrt(4 pi), so that W stays the
         # pressure.
-        omni = spherical_harmonic_basis_real(
-            0, pf.Coordinates(1.0, 0.0, 0.0),
-            normalization=self.normalization)[0, 0]
-        data = (result.pressure.time[0] / omni)[:, None] * basis
+        data = (result.pressure.time[0] / basis[:, 0])[:, None] * basis
 
         return SphericalHarmonicSignal(
             data.T, result.sampling_rate, 'real', self.normalization, 'ACN',
