@@ -29,6 +29,7 @@ Modules
    modules/pyspar
    modules/pyspar.io
    modules/pyspar.parametric
+   modules/pyspar.parametric.plot
 
 
 .. _examples gallery: https://pyfar-gallery.readthedocs.io/en/latest/examples_gallery.html
