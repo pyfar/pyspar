@@ -120,34 +120,27 @@ def test_time_result_error_if_the_sampling_rates_disagree(frontal_impulse):
                               doa=doa, signal=frontal_impulse)
 
 
-@pytest.mark.parametrize(('attribute', 'value'), [
-    ('channel_convention', 'FuMa'), ('normalization', 'maxN'),
-    ('condon_shortley', True)])
-def test_time_result_error_for_another_convention_of_the_signal(
-        frontal_impulse, attribute, value):
-    doa = pf.Coordinates(*np.ones((3, 64)))
-    setattr(frontal_impulse, attribute, value)
-
-    with pytest.raises(ValueError, match='must be real, in ACN'):
-        parametric.TimeResult(pressure=silence(), doa=doa,
-                              signal=frontal_impulse)
-
-
-def test_time_result_error_if_the_basis_of_the_signal_is_complex():
-    doa = pf.Coordinates(*np.ones((3, 64)))
-    signal = SphericalHarmonicSignal(
+@pytest.mark.parametrize(('signal', 'message'), [
+    (SphericalHarmonicSignal(
         np.zeros((4, 64), dtype=complex), 48000, 'complex', 'N3D', 'ACN',
-        False, is_complex=True)
+        False, is_complex=True),
+     'TimeResult requires a real signal without the Condon-Shortley phase'),
+    (sh_signal(np.zeros((1, 64))),
+     'signal has order 0 but TimeResult needs at least order 1')])
+def test_time_result_error_for_a_signal_it_cannot_store(signal, message):
+    doa = pf.Coordinates(*np.ones((3, 64)))
 
-    with pytest.raises(ValueError, match='must be real, in ACN'):
+    with pytest.raises(ValueError, match=message):
         parametric.TimeResult(pressure=silence(), doa=doa, signal=signal)
 
 
-@pytest.mark.parametrize('shape', [(1, 64), (2, 4, 64)])
-def test_time_result_error_if_the_signal_is_not_one_first_order_signal(shape):
+def test_time_result_stores_a_signal_in_another_convention(frontal_impulse):
     doa = pf.Coordinates(*np.ones((3, 64)))
+    frontal_impulse.channel_convention = 'FuMa'
+    frontal_impulse.normalization = 'maxN'
 
-    with pytest.raises(ValueError, match='one spherical harmonic signal of '
-                                         'order one or higher'):
-        parametric.TimeResult(pressure=silence(), doa=doa,
-                              signal=sh_signal(np.zeros(shape)))
+    result = parametric.TimeResult(pressure=silence(), doa=doa,
+                                   signal=frontal_impulse)
+
+    assert result.signal.channel_convention == 'FuMa'
+    assert result.signal.normalization == 'maxN'

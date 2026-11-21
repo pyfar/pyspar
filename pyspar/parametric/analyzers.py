@@ -9,6 +9,7 @@ from scipy.ndimage import convolve1d
 from spharpy import SphericalHarmonicSignal
 
 from .classes import AnalyzerBase, TimeResult
+from pyspar.utils.spherical_harmonics import _check_sh_input
 
 
 class PseudoIntensityVectorAnalyzer(AnalyzerBase):
@@ -90,8 +91,8 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
         Parameters
         ----------
         signal : spharpy.SphericalHarmonicSignal
-            Real spherical harmonic signal of order one or higher, in ACN
-            with N3D or SN3D normalization and without the Condon-Shortley
+            Real spherical harmonic signal of order one or higher, in any
+            normalization and channel convention, without the Condon-Shortley
             phase; orders above one are truncated to first order with a
             warning.
 
@@ -101,41 +102,17 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
             Pressure and direction of arrival per sample, and the first-order
             signal in ACN/N3D. Samples without a direction are NaN.
         """
-        if not isinstance(signal, SphericalHarmonicSignal):
-            raise TypeError(
-                f"{type(self).__name__} requires a "
-                "spharpy.SphericalHarmonicSignal; got "
-                f"{type(signal).__name__}.")
-        if (signal.basis_type != 'real' or signal.channel_convention != 'ACN'
-                or signal.normalization not in ('N3D', 'SN3D')
-                or signal.condon_shortley):
-            raise ValueError(
-                "signal must be real, in ACN with N3D or SN3D normalization "
-                "and without the Condon-Shortley phase; got "
-                f"{signal.basis_type}, {signal.channel_convention}, "
-                f"{signal.normalization}, condon_shortley="
-                f"{signal.condon_shortley}.")
-        if signal.n_max < 1:
-            raise ValueError(
-                f"{type(self).__name__} needs at least order 1, got order "
-                f"{signal.n_max}.")
-        # The last axis of cshape counts the spherical harmonic coefficients.
-        if np.prod(signal.cshape[:-1]) != 1:
-            raise ValueError(
-                f"{type(self).__name__} expects a single spherical harmonic "
-                f"signal, got cshape {signal.cshape}.")
-        n3d = signal.copy()
-        n3d.normalization = 'N3D'
-        # Contiguous, so that the result does not depend on the order of
-        # the input.
-        data = np.ascontiguousarray(
-            np.asarray(n3d.time, dtype=float).reshape(-1, n3d.n_samples).T)
+        _check_sh_input(signal, type(self).__name__, 1)
         if signal.n_max > 1:
             warnings.warn(
                 f"signal is of order {signal.n_max}. The pseudo-intensity "
                 "vector uses first order only, the remaining channels are "
                 "ignored.", stacklevel=2)
-            data = data[:, :4]
+        n3d = signal.copy()
+        n3d.channel_convention = 'ACN'
+        n3d.normalization = 'N3D'
+        data = np.asarray(n3d.time, dtype=float).reshape(
+            -1, n3d.n_samples)[:4].T
 
         first_order = SphericalHarmonicSignal(
             data.T, signal.sampling_rate, 'real', 'N3D', 'ACN', False)
