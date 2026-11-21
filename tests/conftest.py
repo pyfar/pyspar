@@ -93,3 +93,45 @@ def make_impulse_response():
 def impulse_response():
     """First-order impulse response: direct sound, reflections, tail."""
     return make_impulse_response()
+
+
+def layout(azimuth_deg, elevation_deg):
+    """Loudspeaker layout from directions in degrees."""
+    return pf.Coordinates.from_spherical_elevation(
+        np.deg2rad(azimuth_deg), np.deg2rad(elevation_deg),
+        np.ones(len(azimuth_deg)))
+
+
+# [azimuth, elevation] in degrees.
+LAYOUT_HORIZONTAL = np.array([[0, 0], [30, 0], [-30, 0], [110, 0],
+                              [-110, 0]], float)
+LAYOUT_SURROUND = np.array([[0, 0], [60, 0], [120, 0], [180, 0], [-120, 0],
+                            [-60, 0], [0, 90], [0, -90]], float)
+
+
+@pytest.fixture
+def layout_horizontal():
+    """ITU-R BS.775 5.0 layout, all loudspeakers on the horizon."""
+    return layout(*LAYOUT_HORIZONTAL.T)
+
+
+@pytest.fixture
+def layout_surround():
+    """Layout enclosing the listener: a ring plus top and bottom."""
+    return layout(*LAYOUT_SURROUND.T)
+
+
+@pytest.fixture
+def layout_hemisphere():
+    """Upper-hemisphere layout that leaves the lower hemisphere uncovered."""
+    azimuth = [0, 90, 180, -90, 45, -135, 0]
+    elevation = [0, 0, 0, 0, 40, 40, 90]
+    return layout(azimuth, elevation)
+
+
+@pytest.fixture
+def analysis(impulse_response):
+    """Analysis of the impulse response with a 5-sample window."""
+    from pyspar import parametric
+    return parametric.PseudoIntensityVectorAnalyzer(window_length=5)(
+        impulse_response)
