@@ -38,6 +38,10 @@ extensions = [
 # package
 autodoc_default_options = {'autosummary': True}
 
+# Attributes sections as :ivar: fields; as separate entries they duplicate
+# the ones :undoc-members: generates.
+napoleon_use_ivar = True
+
 # show the code of plots that follows the command .. plot:: based on the
 # package matplotlib.sphinxext.plot_directive
 plot_include_source = True

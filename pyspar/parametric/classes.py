@@ -1,0 +1,160 @@
+"""Base classes and analysis result of the parametric processing chain.
+
+Methods with one direction of arrival per sample, the Spatial Decomposition
+Method and its variants, are split into three stages:
+
+:class:`AnalyzerBase`
+    Estimates spatial parameters from a measured signal and returns them
+    as a result, such as :class:`TimeResult`.
+:class:`SynthesizerBase`
+    Turns the result of an analysis into loudspeaker, binaural or Ambisonic
+    signals.
+:class:`Postprocessor`
+    Corrects the loudspeaker signals inside a synthesizer or the rendered
+    signal.
+"""
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+import numpy as np
+import pyfar as pf
+from spharpy import SphericalHarmonicSignal
+
+
+@dataclass
+class TimeResult:
+    """Spatial analysis with one direction of arrival per pressure sample.
+
+    Attributes
+    ----------
+    pressure : pyfar.Signal
+        Omnidirectional pressure impulse response, one channel.
+    signal : pyfar.Signal
+        The analyzed signal: the first-order spharpy.SphericalHarmonicSignal
+        in ACN/N3D for the pseudo-intensity vector.
+    doa : pyfar.Coordinates, cshape (n_samples,)
+        Direction of arrival per sample of `pressure`, as a unit vector;
+        samples without a direction are NaN.
+    sampling_rate : float
+        Sampling rate of `signal` in Hz.
+    """
+
+    pressure: pf.Signal
+    signal: pf.Signal
+    doa: pf.Coordinates
+
+    def __post_init__(self):
+        """Check that pressure, directions and signal belong together.
+
+        `pressure` must be a single-channel signal, `doa` must hold one
+        direction per pressure sample, with a cshape of ``(n_samples,)`` and
+        NaN rather than a zero vector where a sample has none, and `signal`
+        must have the sampling rate and the number of samples of the
+        pressure. A spherical harmonic `signal` must be one real signal of
+        order one or higher, in ACN with N3D or SN3D normalization and
+        without the Condon-Shortley phase.
+        """
+        if not isinstance(self.pressure, pf.Signal):
+            raise TypeError(
+                "pressure must be a pyfar.Signal; got "
+                f"{type(self.pressure).__name__}.")
+        if self.pressure.cshape != (1,):
+            raise ValueError(
+                "pressure must have one channel, got cshape "
+                f"{self.pressure.cshape}.")
+        n_samples = self.pressure.n_samples
+        if not isinstance(self.doa, pf.Coordinates):
+            raise TypeError(
+                "doa must be a pyfar.Coordinates; got "
+                f"{type(self.doa).__name__}.")
+        # Shape, not size: directions per frame and frequency bin can
+        # number as many as the samples.
+        if self.doa.cshape != (n_samples,):
+            raise ValueError(
+                "TimeResult needs one direction per pressure sample: doa "
+                f"has cshape {self.doa.cshape} for {n_samples} pressure "
+                "samples.")
+        # pyfar reads a zero vector as straight ahead, so it cannot mark a
+        # sample without a direction.
+        norm = np.atleast_1d(self.doa.radius)
+        if np.any(norm == 0):
+            raise ValueError(
+                f"doa has {int(np.sum(norm == 0))} zero vectors; "
+                "samples without a direction must be NaN.")
+        if not isinstance(self.signal, pf.Signal):
+            raise TypeError(
+                "signal must be a pyfar.Signal; got "
+                f"{type(self.signal).__name__}.")
+        if self.signal.n_samples != n_samples:
+            raise ValueError(
+                f"signal has {self.signal.n_samples} samples for "
+                f"{n_samples} pressure samples.")
+        if self.signal.sampling_rate != self.pressure.sampling_rate:
+            raise ValueError(
+                "signal has a sampling rate of "
+                f"{self.signal.sampling_rate} Hz but the pressure "
+                f"{self.pressure.sampling_rate} Hz.")
+        if not isinstance(self.signal, SphericalHarmonicSignal):
+            return
+        if (self.signal.basis_type != 'real'
+                or self.signal.channel_convention != 'ACN'
+                or self.signal.normalization not in ('N3D', 'SN3D')
+                or self.signal.condon_shortley):
+            raise ValueError(
+                "signal must be real, in ACN with N3D or SN3D normalization "
+                "and without the Condon-Shortley phase; got "
+                f"{self.signal.basis_type}, "
+                f"{self.signal.channel_convention}, "
+                f"{self.signal.normalization}, condon_shortley="
+                f"{self.signal.condon_shortley}.")
+        # The last axis of cshape counts the spherical harmonic coefficients.
+        if self.signal.cshape[-1] < 4 or np.prod(self.signal.cshape[:-1]) != 1:
+            raise ValueError(
+                "signal must hold one spherical harmonic signal of order one "
+                f"or higher; got cshape {self.signal.cshape}.")
+
+    @property
+    def sampling_rate(self):
+        """Sampling rate of `signal` in Hz."""
+        return float(self.signal.sampling_rate)
+
+
+class AnalyzerBase(ABC):
+    """Abstract base class of the spatial analyzers.
+
+    Its subclasses return a result that the synthesizers render, such as a
+    :class:`TimeResult`.
+    """
+
+    @abstractmethod
+    def __call__(self, signal):
+        """Analyze `signal` and return its result."""
+
+
+class SynthesizerBase(ABC):
+    """Abstract base class of the synthesizers."""
+
+    @abstractmethod
+    def __call__(self, result):
+        """Render `result` and return the rendered signal."""
+
+
+class Postprocessor(ABC):
+    """Abstract base class of the equalizers.
+
+    Attributes
+    ----------
+    stage : str
+        Signal domain the equalizer acts on, fixed by each subclass:
+        ``'loudspeaker'`` for corrections applied to the loudspeaker feeds,
+        which run inside a synthesizer, and ``'output'`` for methods defined
+        on the rendered signal.
+    """
+
+    stage = 'output'
+
+    @abstractmethod
+    def __call__(self, signal, result=None):
+        """Correct `signal` and return the corrected signal."""
