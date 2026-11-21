@@ -28,7 +28,7 @@ from matplotlib.colors import Normalize
 from matplotlib.patches import Circle
 from matplotlib.transforms import Bbox
 
-from pyspar.utils.plot import _map_axes, _project
+from pyspar.utils.plot import _hammer_aitoff, _map_axes
 
 from .classes import TimeResult
 
@@ -116,9 +116,12 @@ def doa_map(result, time_window, dynamic_range=45, direct_sound=True,
             f"{type(direct_sound).__name__}.")
 
     pressure, directions, fs = _data(result)
-    pressure = pressure / _peak(pressure)
+    _peak(pressure)
+    normalized = pf.dsp.normalize(result.pressure)
+    pressure = normalized.time[0]
     with np.errstate(divide='ignore'):
-        level = np.maximum(20 * np.log10(np.abs(pressure)) + dynamic_range, 0)
+        level = np.maximum(
+            pf.dsp.decibel(normalized, 'time')[0] + dynamic_range, 0)
     onset = _onset(pressure, fs)
 
     # Samples counted from one, from ceil(start fs) to ceil(end fs) after the
@@ -128,7 +131,8 @@ def doa_map(result, time_window, dynamic_range=45, direct_sound=True,
     samples = np.arange(max(first, 1) - 1, min(last, len(pressure)))
     samples = samples[(level[samples] > 0)
                       & np.all(np.isfinite(directions[samples]), axis=1)]
-    centers = _project(directions[samples])
+    centers = _hammer_aitoff(result.doa.azimuth[samples],
+                             result.doa.elevation[samples])
     radii = (level[samples] / dynamic_range) ** 1.5 * 0.035
 
     with pf.plot.context(style):
@@ -159,7 +163,9 @@ def doa_map(result, time_window, dynamic_range=45, direct_sound=True,
                                    zorder=1 + dot_level / dynamic_range))
         peak = np.argmax(np.abs(pressure))
         if direct_sound and np.all(np.isfinite(directions[peak])):
-            cross, = ax[0].plot(*_project(directions[[peak]]).T, 'x',
+            x, y = _hammer_aitoff(result.doa.azimuth[peak],
+                                  result.doa.elevation[peak])
+            cross, = ax[0].plot(x, y, 'x',
                                 color='k', markersize=10, markeredgewidth=2,
                                 zorder=3, label='Direct sound')
             # Slightly below the map; left out of the layout, so the
@@ -319,11 +325,11 @@ def spatio_temporal(result, plane='lateral', integration='forward',
     angles = np.arange(round(360 / resolution)) * resolution - 180
     energy = np.zeros((len(angles), len(times)))
     for single in results:
-        pressure, directions, fs = _data(single)
+        pressure, _, fs = _data(single)
         for k, time in enumerate(times):
             window = _window(pressure, time, fs, integration)
             energy[:, k] += _circular_smooth(
-                _polar_response(directions[window], pressure[window],
+                _polar_response(single.doa[window], pressure[window],
                                 resolution, plane),
                 int(np.ceil(smoothing / resolution)))
     with np.errstate(divide='ignore'):
@@ -484,7 +490,7 @@ def time_frequency(result, integration='forward',
             spectrum = np.abs(
                 np.fft.fft(pressure[window], n_fft) / np.sqrt(n_fft)) ** 2
             energy[:, k] += _octave_smooth(spectrum, num_fractions)
-    frequencies = np.arange(n_fft // 2 + 1) * fs / n_fft
+    frequencies = pf.dsp.fft.rfftfreq(n_fft, fs)
     with np.errstate(divide='ignore'):
         level = (10 * np.log10(energy[:n_fft // 2 + 1])
                  - 10 * np.log10(np.max(energy)))
@@ -581,8 +587,14 @@ def _round_half_away(x):
 
 def _onset(pressure, fs):
     """First sample above a fifth of the peak, less one millisecond."""
-    return max(int(np.argmax(np.abs(pressure) > 0.2 * _peak(pressure)))
-               - int(_round_half_away(0.001 * fs)), 0)
+    _peak(pressure)
+    with warnings.catch_warnings():
+        # pyfar warns about responses without a noise floor at their end.
+        warnings.simplefilter('ignore')
+        # The last sample 14 dB, a factor of five, below the peak.
+        start = int(pf.dsp.find_impulse_response_start(
+            pf.Signal(pressure, fs), threshold=20 * np.log10(5))[0])
+    return max(start + 1 - int(_round_half_away(0.001 * fs)), 0)
 
 
 def _window(pressure, time, fs, integration):
@@ -597,7 +609,7 @@ def _window(pressure, time, fs, integration):
     return slice(min(limit, len(pressure) - 1), len(pressure))
 
 
-def _polar_response(directions, pressure, resolution, plane):
+def _polar_response(doa, pressure, resolution, plane):
     """Energy per direction bin in a plane.
 
     The plane's normal takes the role of the z axis: the angle within the
@@ -605,18 +617,14 @@ def _polar_response(directions, pressure, resolution, plane):
     angle to the plane. Returns one value per bin of `resolution` degrees
     from -180 degrees on; the bin at -180 degrees holds the back.
     """
-    x, y, z = directions.T
     if plane == 'lateral':
-        u, v, w, turn = x, y, z, 0.0
+        azimuth, elevation = doa.azimuth, doa.elevation
     elif plane == 'median':
-        u, v, w, turn = x, z, -y, 0.0
+        azimuth, elevation = doa.polar, doa.lateral
     else:
-        u, v, w, turn = z, y, -x, np.pi / 2
-    azimuth = np.arctan2(v, u) + turn
-    elevation = np.arctan2(w, np.hypot(u, v))
-    # Wrapped to (-180, 180] by a round trip through Cartesian coordinates.
-    azimuth = np.arctan2(np.cos(elevation) * np.sin(azimuth),
-                         np.cos(elevation) * np.cos(azimuth))
+        azimuth, elevation = np.pi - doa.frontal, doa.upper - np.pi / 2
+    # Wrapped to [-180, 180).
+    azimuth = pf.dsp.wrap_to_2pi(azimuth + np.pi) - np.pi
 
     n_bins = round(360 / resolution)
     index = (_round_half_away(np.rad2deg(azimuth) / resolution)
@@ -631,12 +639,12 @@ def _circular_smooth(response, size):
     """Centered moving average of `size` bins around the circle."""
     if size <= 1:
         return response
-    n = len(response)
-    wrapped = np.concatenate([response, response, response])
-    smoothed = np.convolve(wrapped, np.ones(size) / size, mode='full')
-    # Sample n + i of the full convolution averages wrapped[n + i - size + 1
-    # : n + i + 1]; the offset centers the window on bin i.
-    return smoothed[n + size // 2:2 * n + size // 2]
+    # The cyclic convolution averages response[i - size + 1:i + 1]; the
+    # shift centers the window on bin i. Empty bins stay non-negative.
+    smoothed = pf.dsp.time_shift(pf.dsp.convolve(
+        pf.Signal(response, 1), pf.Signal(np.ones(size) / size, 1),
+        mode='cyclic', method='fft'), -(size // 2))
+    return np.maximum(smoothed.time[0], 0)
 
 
 def _octave_smooth(spectrum, num_fractions):

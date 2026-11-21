@@ -88,7 +88,7 @@ def test_window_stays_within_the_response():
 def test_polar_response_puts_a_direction_at_its_angle(plane, direction,
                                                       angle):
     response = plot._polar_response(
-        np.array([direction], float), np.array([2.0]), 1, plane)
+        pf.Coordinates(*direction), np.array([2.0]), 1, plane)
 
     # One bin per degree from -180 to 179; the back is the bin at -180.
     expected = np.zeros(360)
@@ -100,8 +100,8 @@ def test_polar_response_weights_by_the_cosine_to_the_plane():
     elevation = np.deg2rad(60)
     direction = [[np.cos(elevation), 0, np.sin(elevation)]]
 
-    response = plot._polar_response(np.array(direction), np.array([1.0]), 1,
-                                    'lateral')
+    response = plot._polar_response(
+        pf.Coordinates(*np.array(direction).T), np.array([1.0]), 1, 'lateral')
 
     npt.assert_allclose(response[180], 0.5)
 
@@ -111,7 +111,8 @@ def test_polar_response_bins_have_the_width_of_the_resolution():
     directions = np.column_stack([np.cos(azimuth), np.sin(azimuth),
                                   np.zeros(3)])
 
-    response = plot._polar_response(directions, np.ones(3), 10, 'lateral')
+    response = plot._polar_response(
+        pf.Coordinates(*directions.T), np.ones(3), 10, 'lateral')
 
     assert len(response) == 36
     npt.assert_array_equal(response[18:20], [1, 2])
@@ -122,7 +123,7 @@ def test_polar_response_skips_samples_without_a_direction(impulses):
     pressure = pressure.copy()
     pressure[200] = 5.0
 
-    response = plot._polar_response(directions, pressure, 1, 'lateral')
+    response = plot._polar_response(impulses.doa, pressure, 1, 'lateral')
 
     npt.assert_allclose(np.sum(response), 2.0)
 
@@ -133,7 +134,7 @@ def test_circular_smooth_centers_and_wraps_the_average():
 
     smoothed = plot._circular_smooth(response, 3)
 
-    npt.assert_allclose(smoothed, [1, 1, 0, 0, 0, 0, 0, 1])
+    npt.assert_allclose(smoothed, [1, 1, 0, 0, 0, 0, 0, 1], atol=1e-15)
 
 
 def test_circular_smooth_of_one_bin_changes_nothing():
