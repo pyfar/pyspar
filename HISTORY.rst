@@ -21,6 +21,8 @@ Added
   layout with ``plot=True``.
 * Crossover to low-frequency effects (LFE) channels in
   ``LoudspeakerSynthesizer``, set by ``lfe_channels`` and ``lfe_cutoff``.
+* ``BinauralSynthesizer`` rendering an analysis to ear signals through
+  virtual loudspeakers.
 
 Changed
 ^^^^^^^
