@@ -6,7 +6,6 @@ from itertools import combinations
 
 import numpy as np
 import pyfar as pf
-from scipy.fft import fft, fftshift, ifft
 from scipy.ndimage import convolve1d, median_filter
 from scipy.signal import sosfiltfilt
 from spharpy import SphericalHarmonicSignal
@@ -222,9 +221,11 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
             # ACN order is [W, Y, Z, X], the vector is [W X, W Y, W Z].
             vector = data[:, [3, 1, 2]] * data[:, :1]
             if self.window_length is not None:
+                n = self.window_length + 2
+                window = pf.dsp.time_window(pf.Signal(
+                    np.ones(n), 1), (0, n - 1)).time[0, 1:-1]
                 # Direct, not FFT, convolution: a vanishing vector stays
                 # exactly zero.
-                window = np.hanning(self.window_length + 2)[1:-1]
                 vector = convolve1d(vector, window, axis=0, mode='constant')
         norm = np.linalg.norm(vector, axis=1, keepdims=True)
         doa = np.divide(vector, norm, out=np.full_like(vector, np.nan),
@@ -448,10 +449,13 @@ class TimeDifferenceOfArrivalAnalyzer(AnalyzerBase):
         pairs = self._pairs
 
         # A symmetric Hann window without its zero end points.
-        window = np.hanning(frame + 2)[1:-1]
+        window = pf.dsp.time_window(pf.Signal(
+            np.ones(frame + 2), fs), (0, frame + 1)).time[0, 1:-1]
         max_delay = int(np.ceil(self._spacing / c * fs)) + 1
         centre = frame // 2
-        region = np.arange(centre - max_delay, centre + max_delay + 2)
+        # pyfar.dsp.correlate puts the zero lag one sample before the centre.
+        zero_lag = centre - 1
+        region = np.arange(zero_lag - max_delay, zero_lag + max_delay + 2)
 
         n_samples = data.shape[0]
         n_frames = n_samples - frame
@@ -461,19 +465,19 @@ class TimeDifferenceOfArrivalAnalyzer(AnalyzerBase):
         batch = 8192
         for start in range(0, n_frames, batch):
             frames = np.arange(start, min(start + batch, n_frames))
-            segments = data[frames[:, None] + np.arange(frame)]  # (F, N, M)
-            spectra = fft(window[None, :, None] * segments, axis=1)
-            cross = spectra[:, :, pairs[:, 0]] * np.conj(
-                spectra[:, :, pairs[:, 1]])
-            correlation = fftshift(np.real(ifft(cross, axis=1)), axes=1)
+            segments = pf.Signal(np.moveaxis(
+                window[:, None] * data[frames[:, None] + np.arange(frame)],
+                1, -1), fs)                                   # (F, M, N)
+            correlation = pf.dsp.correlate(
+                segments[:, pairs[:, 0]], segments[:, pairs[:, 1]],
+                mode='cyclic').time                           # (F, P, N)
             # Only positive correlation is accepted.
             correlation = np.maximum(correlation, 2 * np.finfo(float).eps)
 
-            peak = (np.argmax(correlation[:, region, :], axis=1)
-                    + region[0])                                  # (F, P)
+            peak = np.argmax(correlation[..., region], axis=-1) + region[0]
             at_peak, before, after = (
-                np.take_along_axis(correlation, peak[:, None, :] + shift,
-                                   axis=1)[:, 0]
+                np.take_along_axis(correlation, peak[..., None] + shift,
+                                   axis=-1)[..., 0]
                 for shift in (0, -1, 1))
 
             # Exponential interpolation of the peak over -1, 0, +1 samples.
@@ -481,7 +485,7 @@ class TimeDifferenceOfArrivalAnalyzer(AnalyzerBase):
                 fraction = (np.log(after) - np.log(before)) / (
                     4 * np.log(at_peak) - 2 * np.log(before)
                     - 2 * np.log(after))
-                delay = (peak - centre + fraction) / fs
+                delay = (peak - zero_lag + fraction) / fs
                 direction = -(self._inverse @ delay.T)             # (3, F)
                 direction /= np.linalg.norm(direction, axis=0)
 
