@@ -181,9 +181,11 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
         # ACN order is [W, Y, Z, X], the vector is [W X, W Y, W Z].
         vector = data[:, [3, 1, 2]] * data[:, :1]
         if self.window_length is not None:
+            n = self.window_length + 2
+            window = pf.dsp.time_window(pf.Signal(
+                np.ones(n), 1), (0, n - 1)).time[0, 1:-1]
             # Direct, not FFT, convolution: a vanishing vector stays
             # exactly zero.
-            window = np.hanning(self.window_length + 2)[1:-1]
             vector = convolve1d(vector, window, axis=0, mode='constant')
         norm = np.linalg.norm(vector, axis=1, keepdims=True)
         return np.divide(vector, norm, out=np.full_like(vector, np.nan),
