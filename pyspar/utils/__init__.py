@@ -1,1 +1,1 @@
-"""Utilities of the spatial analyzers."""
+"""Internal utilities shared by the subpackages."""

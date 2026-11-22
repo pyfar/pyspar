@@ -6,9 +6,11 @@ loudspeaker signals inside the synthesizer or the rendered signal.
 """
 from .classes import TimeResult
 from .analyzers import PseudoIntensityVectorAnalyzer
+from .synthesizers import LoudspeakerSynthesizer
 
 
 __all__ = [
+    'LoudspeakerSynthesizer',
     'PseudoIntensityVectorAnalyzer',
     'TimeResult',
 ]

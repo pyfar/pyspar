@@ -18,6 +18,7 @@ Classes
 
    classes/pyspar.parametric.classes
    classes/pyspar.parametric.analyzers
+   classes/pyspar.parametric.synthesizers
 
 Modules
 -------
@@ -26,6 +27,7 @@ Modules
    :maxdepth: 1
 
    modules/pyspar
+   modules/pyspar.io
    modules/pyspar.parametric
 
 
