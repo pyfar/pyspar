@@ -36,11 +36,6 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
         by a median instead of the Hann window, see Notes. ``None``, the
         default, estimates from the full band.
 
-    Attributes
-    ----------
-    passband : tuple of float or None
-        Band-pass edges in Hz.
-
     See Also
     --------
     TimeDifferenceOfArrivalAnalyzer
@@ -108,12 +103,17 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
             passband = self._check_passband(passband)
 
         self._window_length = window_length
-        self.passband = passband
+        self._passband = passband
 
     @property
     def window_length(self):
         """Get the window length in samples, as given."""
         return self._window_length
+
+    @property
+    def passband(self):
+        """Get the edges of the band-pass in Hz, or ``None``."""
+        return self._passband
 
     @staticmethod
     def _check_passband(passband):

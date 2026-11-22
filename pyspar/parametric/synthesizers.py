@@ -519,15 +519,6 @@ class AmbisonicSynthesizer(SynthesizerBase):
     normalization : ``'N3D'``, ``'SN3D'``, optional
         Normalization of the output. The default is ``'N3D'``.
 
-    Attributes
-    ----------
-    order : int
-        Ambisonic order of the output.
-    method : str
-        Upmixing method in use.
-    normalization : str
-        Normalization of the output.
-
     Notes
     -----
     The omnidirectional channel of the output equals the pressure of the
@@ -569,9 +560,24 @@ class AmbisonicSynthesizer(SynthesizerBase):
                 f"normalization is '{normalization}' but must be 'N3D' or "
                 "'SN3D'.")
 
-        self.order = int(order)
-        self.method = method
-        self.normalization = normalization
+        self._order = int(order)
+        self._method = method
+        self._normalization = normalization
+
+    @property
+    def order(self):
+        """Get the Ambisonic order of the output."""
+        return self._order
+
+    @property
+    def method(self):
+        """Get the upmixing method in use."""
+        return self._method
+
+    @property
+    def normalization(self):
+        """Get the normalization of the output."""
+        return self._normalization
 
     def __call__(self, result: TimeResult) -> SphericalHarmonicSignal:
         """Upmix `result` to a higher-order Ambisonic signal.
