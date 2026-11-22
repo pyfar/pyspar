@@ -36,13 +36,6 @@ class LoudspeakerSynthesizer(SynthesizerBase):
     lfe_cutoff : float, optional
         Crossover frequency of the LFE channels in Hz. The default is ``80``.
 
-    Attributes
-    ----------
-    lfe_channels : tuple of int
-        Indices of the LFE channels.
-    lfe_cutoff : float
-        Crossover frequency of the LFE channels in Hz.
-
     Notes
     -----
     With `lfe_channels`, a crossover runs after the panning: third-order
@@ -114,8 +107,8 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         self._loudspeakers = loudspeakers
         self._panning = panning
         self._dimensionality = dimensionality
-        self.lfe_channels = lfe_channels
-        self.lfe_cutoff = float(lfe_cutoff)
+        self._lfe_channels = lfe_channels
+        self._lfe_cutoff = float(lfe_cutoff)
 
     @property
     def loudspeakers(self):
@@ -131,6 +124,16 @@ class LoudspeakerSynthesizer(SynthesizerBase):
     def dimensionality(self):
         """Get the dimensionality of the layout."""
         return self._dimensionality
+
+    @property
+    def lfe_channels(self):
+        """Get the indices of the LFE channels."""
+        return self._lfe_channels
+
+    @property
+    def lfe_cutoff(self):
+        """Get the crossover frequency of the LFE channels in Hz."""
+        return self._lfe_cutoff
 
     def __call__(self, result: TimeResult) -> pf.Signal:
         """Render `result` to loudspeaker signals.
