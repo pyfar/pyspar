@@ -43,7 +43,7 @@ def test_time_result_error_if_the_signal_is_not_a_signal():
 
 
 def test_postprocessor_acts_on_the_output_by_default():
-    assert parametric.Postprocessor.stage == 'output'
+    assert parametric.classes.Postprocessor.stage == 'output'
 
 
 def test_time_result_error_if_the_pressure_is_not_a_signal(frontal_impulse):

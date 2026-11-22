@@ -29,18 +29,17 @@ from pyspar.utils.spherical_harmonics import _check_sh_input
 class TimeResult:
     """Spatial analysis with one direction of arrival per pressure sample.
 
-    Attributes
+    Parameters
     ----------
     pressure : pyfar.Signal
         Omnidirectional pressure impulse response, one channel.
     signal : pyfar.Signal
         The analyzed signal: the first-order spharpy.SphericalHarmonicSignal
         in ACN/N3D for the pseudo-intensity vector.
-    doa : pyfar.Coordinates, cshape (n_samples,)
-        Direction of arrival per sample of `pressure`, as a unit vector;
-        samples without a direction are NaN.
-    sampling_rate : float
-        Sampling rate of `signal` in Hz.
+    doa : pyfar.Coordinates
+        Direction of arrival per sample of `pressure`, cshape
+        ``(n_samples,)``, as a unit vector; samples without a direction are
+        NaN.
     """
 
     pressure: pf.Signal
@@ -102,7 +101,7 @@ class TimeResult:
 
     @property
     def sampling_rate(self):
-        """Sampling rate of `signal` in Hz."""
+        """Get the sampling rate of `signal` in Hz."""
         return float(self.signal.sampling_rate)
 
 
@@ -127,18 +126,13 @@ class SynthesizerBase(ABC):
 
 
 class Postprocessor(ABC):
-    """Abstract base class of the equalizers.
-
-    Attributes
-    ----------
-    stage : str
-        Signal domain the equalizer acts on, fixed by each subclass:
-        ``'loudspeaker'`` for corrections applied to the loudspeaker feeds,
-        which run inside a synthesizer, and ``'output'`` for methods defined
-        on the rendered signal.
-    """
+    """Abstract base class of the equalizers."""
 
     stage = 'output'
+    """Signal domain the equalizer acts on, fixed by each subclass:
+    ``'loudspeaker'`` for corrections applied to the loudspeaker feeds, which
+    run inside a synthesizer, and ``'output'`` for methods defined on the
+    rendered signal."""
 
     @abstractmethod
     def __call__(self, signal, result=None):

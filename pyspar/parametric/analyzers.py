@@ -15,12 +15,11 @@ from pyspar.utils.spherical_harmonics import _check_sh_input
 class PseudoIntensityVectorAnalyzer(AnalyzerBase):
     """Estimate directions of arrival by the pseudo-intensity vector.
 
-    Assigns a direction of arrival to every sample of the omnidirectional
-    channel of a first-order spherical harmonic signal, as the spatial
-    decomposition method does [#]_. The direction is that of the
-    pseudo-intensity vector, the product of the omnidirectional channel with
-    each of the dipole channels, smoothed by a centred Hann window and
-    normalized.
+    Estimate a direction of arrival for every sample of a first-order spherical
+    harmonic signal, as the spatial decomposition method does [#]_. The
+    direction is that of the pseudo-intensity vector, the product of the
+    omnidirectional channel with each of the dipole channels, smoothed by a
+    centred Hann window and normalized.
 
     Parameters
     ----------
@@ -28,11 +27,6 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
         Length in samples of the window smoothing the vector, centred on
         each sample, an odd number of at least 3. ``None`` does not smooth:
         every sample takes the direction of its own vector.
-
-    Attributes
-    ----------
-    window_length : int or None
-        Window length in samples, as given.
 
     Notes
     -----
@@ -60,19 +54,15 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
     >>> data[:, 8] = spherical_harmonic_basis_real(1, direction)[0]
     >>> signal = SphericalHarmonicSignal(
     ...     data, 48000, 'real', 'N3D', 'ACN', False)
-    >>> result = pyspar.parametric.PseudoIntensityVectorAnalyzer(
-    ...     window_length=5)(signal)
+    >>> analyzer = pyspar.parametric.PseudoIntensityVectorAnalyzer(
+    ...     window_length=5)
+    >>> result = analyzer(signal)
     >>> np.round(result.doa.cartesian[8], 12)
     array([0., 1., 0.])
     """
 
     def __init__(self, window_length):
-        if window_length is not None:
-            if (isinstance(window_length, bool)
-                    or not isinstance(window_length, (int, np.integer))):
-                raise TypeError(
-                    "window_length must be an integer or None; got "
-                    f"{type(window_length).__name__}.")
+        if isinstance(window_length, (int, np.integer)):
             if window_length < 3:
                 raise ValueError(
                     f"window_length is {window_length} but must be at "
@@ -81,9 +71,17 @@ class PseudoIntensityVectorAnalyzer(AnalyzerBase):
                 raise ValueError(
                     f"window_length is {window_length} but must be odd, so "
                     "that the window is centred.")
+        elif window_length is not None:
+            raise TypeError(
+                "window_length must be an integer or None; got "
+                f"{type(window_length).__name__}.")
 
-        self.window_length = (None if window_length is None
-                              else int(window_length))
+        self._window_length = window_length
+
+    @property
+    def window_length(self):
+        """Get the window length in samples, as given."""
+        return self._window_length
 
     def __call__(self, signal) -> TimeResult:
         """Analyze `signal` and return an analysis result.

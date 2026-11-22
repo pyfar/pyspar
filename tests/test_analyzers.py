@@ -198,7 +198,7 @@ def test_default_parameters():
     assert analyzer.window_length is None
 
 
-@pytest.mark.parametrize('window_length', [1, 0, -3])
+@pytest.mark.parametrize('window_length', [1, 0, -3, True])
 def test_error_if_the_window_is_shorter_than_three_samples(window_length):
     with pytest.raises(ValueError, match='window_length is .* at least 3'):
         parametric.PseudoIntensityVectorAnalyzer(window_length=window_length)
