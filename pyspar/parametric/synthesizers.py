@@ -322,13 +322,6 @@ class BinauralSynthesizer(SynthesizerBase):
         Panning law, see :class:`LoudspeakerSynthesizer`. The default is
         ``'nls'``.
 
-    Attributes
-    ----------
-    virtual_loudspeakers : pyfar.Coordinates or None
-        The layout given, or ``None``.
-    panning : str
-        Panning law in use.
-
     Notes
     -----
     The ear signals are the sums of the convolutions, with the length of the
@@ -423,12 +416,12 @@ class BinauralSynthesizer(SynthesizerBase):
 
     @property
     def virtual_loudspeakers(self):
-        """The layout given, or ``None``."""
+        """Get the layout given, or ``None``."""
         return self._virtual_loudspeakers
 
     @property
     def panning(self):
-        """Panning law in use."""
+        """Get the panning law in use."""
         return self._loudspeaker_synthesizer.panning
 
     def render_loudspeakers(self, result: TimeResult) -> pf.Signal:
