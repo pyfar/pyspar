@@ -37,19 +37,6 @@ class LoudspeakerSynthesizer(SynthesizerBase):
     lfe_cutoff : float, optional
         Crossover frequency of the LFE channels in Hz. The default is ``80``.
 
-    Attributes
-    ----------
-    loudspeakers : pyfar.Coordinates
-        Loudspeaker directions.
-    panning : str
-        Panning law in use.
-    dimensionality : int
-        Dimensionality of the layout.
-    lfe_channels : tuple of int
-        Indices of the LFE channels.
-    lfe_cutoff : float
-        Crossover frequency of the LFE channels in Hz.
-
     Notes
     -----
     With `lfe_channels`, a crossover runs after the panning: third-order
@@ -118,11 +105,36 @@ class LoudspeakerSynthesizer(SynthesizerBase):
                 f"lfe_cutoff is {lfe_cutoff} but must be positive and "
                 "finite.")
 
-        self.loudspeakers = loudspeakers
-        self.panning = panning
-        self.dimensionality = dimensionality
-        self.lfe_channels = lfe_channels
-        self.lfe_cutoff = float(lfe_cutoff)
+        self._loudspeakers = loudspeakers
+        self._panning = panning
+        self._dimensionality = dimensionality
+        self._lfe_channels = lfe_channels
+        self._lfe_cutoff = float(lfe_cutoff)
+
+    @property
+    def loudspeakers(self):
+        """Get the loudspeaker directions."""
+        return self._loudspeakers
+
+    @property
+    def panning(self):
+        """Get the panning law in use."""
+        return self._panning
+
+    @property
+    def dimensionality(self):
+        """Get the dimensionality of the layout."""
+        return self._dimensionality
+
+    @property
+    def lfe_channels(self):
+        """Get the indices of the LFE channels."""
+        return self._lfe_channels
+
+    @property
+    def lfe_cutoff(self):
+        """Get the crossover frequency of the LFE channels in Hz."""
+        return self._lfe_cutoff
 
     def __call__(self, result: TimeResult) -> pf.Signal:
         """Render `result` to loudspeaker signals.
