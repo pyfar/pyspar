@@ -167,3 +167,40 @@ def analysis(impulse_response):
     from pyspar import parametric
     return parametric.PseudoIntensityVectorAnalyzer(window_length=5)(
         impulse_response)
+
+
+# [azimuth, elevation] in degrees: eight azimuths on three elevations, and
+# the poles.
+HRIR_GRID = np.column_stack([
+    np.concatenate([np.tile(np.arange(0, 360, 45), 3), [0, 0]]),
+    np.concatenate([np.repeat([-45, 0, 45], 8), [90, -90]])]).astype(float)
+
+
+def hrir_grid():
+    """26 directions: eight azimuths on three elevations, and the poles."""
+    return layout(*HRIR_GRID.T)
+
+
+def make_hrir_set():
+    """Seeded random head-related impulse responses on the 26-point grid."""
+    rng = np.random.default_rng(7)
+    data = rng.standard_normal((26, 2, 32)) * np.exp(-np.arange(32) / 6)
+    return pf.Signal(data, 48000), hrir_grid()
+
+
+@pytest.fixture
+def hrir_set():
+    """Seeded random head-related impulse responses on a 26-point grid.
+
+    Every direction and both ears differ, so a one-hot loudspeaker signal
+    identifies exactly which response was used for which ear.
+    """
+    return make_hrir_set()
+
+
+@pytest.fixture
+def delta_hrirs():
+    """Unit impulses for every direction and ear: a transparent head."""
+    data = np.zeros((26, 2, 8))
+    data[:, :, 0] = 1.0
+    return pf.Signal(data, 48000), hrir_grid()
