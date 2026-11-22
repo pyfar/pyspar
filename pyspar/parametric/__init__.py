@@ -4,12 +4,7 @@ Signal-dependent methods: an analyzer estimates spatial parameters of a
 measurement, a synthesizer renders them, and postprocessors correct the
 loudspeaker signals inside the synthesizer or the rendered signal.
 """
-from .classes import (
-    AnalyzerBase,
-    Postprocessor,
-    SynthesizerBase,
-    TimeResult,
-)
+from .classes import TimeResult
 from .analyzers import (
     PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
 from .synthesizers import (
@@ -19,13 +14,10 @@ from . import plot
 
 __all__ = [
     'AmbisonicSynthesizer',
-    'AnalyzerBase',
     'BinauralSynthesizer',
     'LoudspeakerSynthesizer',
     'plot',
-    'Postprocessor',
     'PseudoIntensityVectorAnalyzer',
-    'SynthesizerBase',
     'TimeDifferenceOfArrivalAnalyzer',
     'TimeResult',
 ]
