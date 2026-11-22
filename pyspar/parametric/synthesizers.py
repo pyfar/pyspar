@@ -38,12 +38,6 @@ class LoudspeakerSynthesizer(SynthesizerBase):
 
     Attributes
     ----------
-    loudspeakers : pyfar.Coordinates
-        Loudspeaker directions.
-    panning : str
-        Panning law in use.
-    dimensionality : int
-        Dimensionality of the layout.
     lfe_channels : tuple of int
         Indices of the LFE channels.
     lfe_cutoff : float
@@ -117,11 +111,26 @@ class LoudspeakerSynthesizer(SynthesizerBase):
                 f"lfe_cutoff is {lfe_cutoff} but must be positive and "
                 "finite.")
 
-        self.loudspeakers = loudspeakers
-        self.panning = panning
-        self.dimensionality = dimensionality
+        self._loudspeakers = loudspeakers
+        self._panning = panning
+        self._dimensionality = dimensionality
         self.lfe_channels = lfe_channels
         self.lfe_cutoff = float(lfe_cutoff)
+
+    @property
+    def loudspeakers(self):
+        """Get the loudspeaker directions."""
+        return self._loudspeakers
+
+    @property
+    def panning(self):
+        """Get the panning law in use."""
+        return self._panning
+
+    @property
+    def dimensionality(self):
+        """Get the dimensionality of the layout."""
+        return self._dimensionality
 
     def __call__(self, result: TimeResult) -> pf.Signal:
         """Render `result` to loudspeaker signals.

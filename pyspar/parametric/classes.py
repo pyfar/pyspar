@@ -22,23 +22,24 @@ import numpy as np
 import pyfar as pf
 from spharpy import SphericalHarmonicSignal
 
+from pyspar.utils.spherical_harmonics import _check_sh_input
+
 
 @dataclass
 class TimeResult:
     """Spatial analysis with one direction of arrival per pressure sample.
 
-    Attributes
+    Parameters
     ----------
     pressure : pyfar.Signal
         Omnidirectional pressure impulse response, one channel.
     signal : pyfar.Signal
         The analyzed signal: the first-order spharpy.SphericalHarmonicSignal
         in ACN/N3D for the pseudo-intensity vector.
-    doa : pyfar.Coordinates, cshape (n_samples,)
-        Direction of arrival per sample of `pressure`, as a unit vector;
-        samples without a direction are NaN.
-    sampling_rate : float
-        Sampling rate of `signal` in Hz.
+    doa : pyfar.Coordinates
+        Direction of arrival per sample of `pressure`, cshape
+        ``(n_samples,)``, as a unit vector; samples without a direction are
+        NaN.
     """
 
     pressure: pf.Signal
@@ -53,8 +54,7 @@ class TimeResult:
         NaN rather than a zero vector where a sample has none, and `signal`
         must have the sampling rate and the number of samples of the
         pressure. A spherical harmonic `signal` must be one real signal of
-        order one or higher, in ACN with N3D or SN3D normalization and
-        without the Condon-Shortley phase.
+        order one or higher without the Condon-Shortley phase.
         """
         if not isinstance(self.pressure, pf.Signal):
             raise TypeError(
@@ -96,28 +96,12 @@ class TimeResult:
                 "signal has a sampling rate of "
                 f"{self.signal.sampling_rate} Hz but the pressure "
                 f"{self.pressure.sampling_rate} Hz.")
-        if not isinstance(self.signal, SphericalHarmonicSignal):
-            return
-        if (self.signal.basis_type != 'real'
-                or self.signal.channel_convention != 'ACN'
-                or self.signal.normalization not in ('N3D', 'SN3D')
-                or self.signal.condon_shortley):
-            raise ValueError(
-                "signal must be real, in ACN with N3D or SN3D normalization "
-                "and without the Condon-Shortley phase; got "
-                f"{self.signal.basis_type}, "
-                f"{self.signal.channel_convention}, "
-                f"{self.signal.normalization}, condon_shortley="
-                f"{self.signal.condon_shortley}.")
-        # The last axis of cshape counts the spherical harmonic coefficients.
-        if self.signal.cshape[-1] < 4 or np.prod(self.signal.cshape[:-1]) != 1:
-            raise ValueError(
-                "signal must hold one spherical harmonic signal of order one "
-                f"or higher; got cshape {self.signal.cshape}.")
+        if isinstance(self.signal, SphericalHarmonicSignal):
+            _check_sh_input(self.signal, 'TimeResult', 1)
 
     @property
     def sampling_rate(self):
-        """Sampling rate of `signal` in Hz."""
+        """Get the sampling rate of `signal` in Hz."""
         return float(self.signal.sampling_rate)
 
 
@@ -143,18 +127,13 @@ class SynthesizerBase(ABC):
 
 
 class Postprocessor(ABC):
-    """Abstract base class of the equalizers.
-
-    Attributes
-    ----------
-    stage : str
-        Signal domain the equalizer acts on, fixed by each subclass:
-        ``'loudspeaker'`` for corrections applied to the loudspeaker feeds,
-        which run inside a synthesizer, and ``'output'`` for methods defined
-        on the rendered signal.
-    """
+    """Abstract base class of the equalizers."""
 
     stage = 'output'
+    """Signal domain the equalizer acts on, fixed by each subclass:
+    ``'loudspeaker'`` for corrections applied to the loudspeaker feeds, which
+    run inside a synthesizer, and ``'output'`` for methods defined on the
+    rendered signal."""
 
     @abstractmethod
     def __call__(self, signal, result=None):
