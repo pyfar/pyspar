@@ -28,15 +28,6 @@ class LoudspeakerSynthesizer(SynthesizerBase):
         sample is weighted by the cosine of its elevation, so energy arriving
         from above or below is attenuated. The default is ``3``.
 
-    Attributes
-    ----------
-    loudspeakers : pyfar.Coordinates
-        Loudspeaker directions.
-    panning : str
-        Panning law in use.
-    dimensionality : int
-        Dimensionality of the layout.
-
     References
     ----------
     .. [#] S. Tervo, J. Patynen, A. Kuusinen and T. Lokki, "Spatial
@@ -82,9 +73,24 @@ class LoudspeakerSynthesizer(SynthesizerBase):
             raise ValueError(
                 f"dimensionality is {dimensionality} but must be 2 or 3.")
 
-        self.loudspeakers = loudspeakers
-        self.panning = panning
-        self.dimensionality = dimensionality
+        self._loudspeakers = loudspeakers
+        self._panning = panning
+        self._dimensionality = dimensionality
+
+    @property
+    def loudspeakers(self):
+        """Get the loudspeaker directions."""
+        return self._loudspeakers
+
+    @property
+    def panning(self):
+        """Get the panning law in use."""
+        return self._panning
+
+    @property
+    def dimensionality(self):
+        """Get the dimensionality of the layout."""
+        return self._dimensionality
 
     def __call__(self, result: TimeResult) -> pf.Signal:
         """Render `result` to loudspeaker signals.
