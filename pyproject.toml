@@ -36,8 +36,8 @@ classifiers = [
 dependencies = [
     "numpy",
     "scipy",
-    "pyfar",
-    "spharpy",
+    "pyfar>=0.8.0",
+    "spharpy>=1.0.0",
     "matplotlib",
 ]
 
@@ -81,7 +81,7 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages]
-find = {}  # Scan the project directory with the default parameters
+find = {include = ["pyspar*"]}
 
 
 [tool.ruff]
