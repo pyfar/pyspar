@@ -195,15 +195,6 @@ class TimeDifferenceOfArrivalAnalyzer(AnalyzerBase):
         sampling rate ``fs`` of the signal. ``None``, the default, uses that
         minimum: 22 samples for a largest capsule distance of 5 cm at 48 kHz.
 
-    Attributes
-    ----------
-    microphones : pyfar.Coordinates
-        Capsule positions.
-    reference_channel : int
-        Capsule used as the pressure.
-    window_length : int or None
-        Window length in samples, as given.
-
     See Also
     --------
     PseudoIntensityVectorAnalyzer
@@ -262,10 +253,10 @@ class TimeDifferenceOfArrivalAnalyzer(AnalyzerBase):
             raise TypeError(
                 "window_length must be an integer or None; got "
                 f"{type(window_length).__name__}.")
-        self.microphones = microphones
-        self.reference_channel = reference_channel
-        self.window_length = (None if window_length is None
-                              else int(window_length))
+        self._microphones = microphones
+        self._reference_channel = reference_channel
+        self._window_length = (None if window_length is None
+                               else int(window_length))
 
         if not isinstance(microphones, pf.Coordinates):
             raise TypeError(
@@ -293,6 +284,21 @@ class TimeDifferenceOfArrivalAnalyzer(AnalyzerBase):
         self._pairs = pairs
         self._inverse = np.linalg.pinv(differences)
         self._spacing = np.max(np.linalg.norm(differences, axis=1))
+
+    @property
+    def microphones(self):
+        """Get the capsule positions."""
+        return self._microphones
+
+    @property
+    def reference_channel(self):
+        """Get the index of the capsule used as the pressure."""
+        return self._reference_channel
+
+    @property
+    def window_length(self):
+        """Get the window length in samples, as given."""
+        return self._window_length
 
     def __call__(self, signal) -> TimeResult:
         """Analyze `signal` and return an analysis result.
