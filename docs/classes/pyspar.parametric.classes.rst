@@ -9,22 +9,22 @@ Base classes
 
 .. autosummary::
 
-   AnalyzerBase
-   Postprocessor
-   SynthesizerBase
+   classes.AnalyzerBase
+   classes.Postprocessor
+   classes.SynthesizerBase
    TimeResult
 
-.. autoclass:: pyspar.parametric.AnalyzerBase
+.. autoclass:: pyspar.parametric.classes.AnalyzerBase
    :members:
    :undoc-members:
    :inherited-members:
 
-.. autoclass:: pyspar.parametric.Postprocessor
+.. autoclass:: pyspar.parametric.classes.Postprocessor
    :members:
    :undoc-members:
    :inherited-members:
 
-.. autoclass:: pyspar.parametric.SynthesizerBase
+.. autoclass:: pyspar.parametric.classes.SynthesizerBase
    :members:
    :undoc-members:
    :inherited-members:
