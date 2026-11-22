@@ -45,17 +45,18 @@ def _replace_missing_doa(doa, pressure):
 
     Returns
     -------
-    directions : numpy.ndarray, shape (n_samples, 3)
-        Unit Cartesian directions.
+    directions : pyfar.Coordinates, cshape (n_samples,)
+        Unit directions.
 
     Notes
     -----
     Samples without a direction are NaN: for the pseudo-intensity vector
     where the signal is digitally silent within its window or, without
     smoothing, where the omnidirectional channel is exactly zero, which
-    recordings of finite resolution reach near some of its zero crossings;
-    for time differences of arrival at either end not covered by a full
-    frame and in frames without a correlation peak. These samples are placed
+    recordings of finite resolution reach near some of its zero crossings,
+    and none with a `passband`, whose analysis gives the zenith there; for
+    time differences of arrival at either end not covered by a full frame
+    and in frames without a correlation peak. These samples are placed
     straight ahead, with a warning when they carry more than
     :math:`10^{-4}` (-40 dB) of the energy of the response.
     """
@@ -73,4 +74,5 @@ def _replace_missing_doa(doa, pressure):
             stacklevel=3)
 
     directions[missing] = [1.0, 0.0, 0.0]
-    return directions / np.linalg.norm(directions, axis=1, keepdims=True)
+    return pf.Coordinates(*(
+        directions / np.linalg.norm(directions, axis=1, keepdims=True)).T)

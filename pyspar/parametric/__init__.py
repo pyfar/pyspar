@@ -7,10 +7,12 @@ loudspeaker signals inside the synthesizer or the rendered signal.
 from .classes import TimeResult
 from .analyzers import (
     PseudoIntensityVectorAnalyzer, TimeDifferenceOfArrivalAnalyzer)
-from .synthesizers import BinauralSynthesizer, LoudspeakerSynthesizer
+from .synthesizers import (
+    AmbisonicSynthesizer, BinauralSynthesizer, LoudspeakerSynthesizer)
 
 
 __all__ = [
+    'AmbisonicSynthesizer',
     'BinauralSynthesizer',
     'LoudspeakerSynthesizer',
     'PseudoIntensityVectorAnalyzer',

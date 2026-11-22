@@ -124,6 +124,20 @@ def test_sample_without_a_direction_is_placed_in_front(analysis,
     assert np.flatnonzero(data[loudest]).tolist() == [front]
 
 
+@pytest.mark.filterwarnings('ignore:.*samples have no direction')
+def test_tdoa_analysis_renders_to_loudspeakers(array_response, microphones,
+                                               layout_surround):
+    result = parametric.TimeDifferenceOfArrivalAnalyzer(
+        microphones, reference_channel=4)(array_response)
+
+    # The ends not covered by a full frame have no direction but, with the
+    # band-limited arrivals, a little pressure.
+    rendered = parametric.LoudspeakerSynthesizer(layout_surround)(result)
+
+    npt.assert_array_equal(np.sum(rendered.time, axis=0),
+                           result.pressure.time[0])
+
+
 # ----- parameters and errors -----------------------------------------------
 
 def test_default_parameters(layout_surround):
