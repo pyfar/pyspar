@@ -103,18 +103,36 @@ def test_window_smooths_the_vector_not_the_channels():
     assert np.isnan(doa[15:]).all()
 
 
-def test_result_does_not_depend_on_the_normalization(impulse_response):
+@pytest.mark.parametrize(('normalization', 'channel_convention'), [
+    ('SN3D', 'ACN'), ('maxN', 'FuMa'), ('NM', 'ACN')])
+def test_result_does_not_depend_on_the_convention(
+        impulse_response, normalization, channel_convention):
     converted = impulse_response.copy()
-    converted.normalization = 'SN3D'
+    converted.channel_convention = channel_convention
+    converted.normalization = normalization
     analyzer = parametric.PseudoIntensityVectorAnalyzer(window_length=5)
 
     reference = analyzer(impulse_response)
     result = analyzer(converted)
 
-    npt.assert_allclose(result.doa.cartesian, reference.doa.cartesian,
-                        atol=1e-12)
-    npt.assert_allclose(result.pressure.time[0], reference.pressure.time[0],
-                        atol=1e-15)
+    npt.assert_array_equal(result.doa.cartesian, reference.doa.cartesian)
+    npt.assert_array_equal(result.pressure.time[0],
+                           reference.pressure.time[0])
+
+
+def test_direction_of_a_fuma_plane_wave():
+    # Written by hand in the Furse-Malham format, W X Y Z with W weighted
+    # by 1 / sqrt(2): a plane wave from the left has only W and Y.
+    data = np.zeros((4, 32))
+    data[:, 4] = [1 / np.sqrt(2), 0, 1, 0]
+    signal = sh_signal(np.zeros((4, 32)))
+    signal.channel_convention = 'FuMa'
+    signal.normalization = 'maxN'
+    signal.time = data
+
+    doa = parametric.PseudoIntensityVectorAnalyzer(None)(signal).doa
+
+    npt.assert_allclose(doa.cartesian[4], [0, 1, 0], atol=1e-12)
 
 
 def test_pressure_is_the_omnidirectional_channel(impulse_response):
@@ -124,9 +142,13 @@ def test_pressure_is_the_omnidirectional_channel(impulse_response):
                            np.asarray(impulse_response.time)[0, 0])
 
 
-def test_result_signal_is_first_order_acn_n3d(impulse_response):
+@pytest.mark.parametrize(('normalization', 'channel_convention'), [
+    ('SN3D', 'ACN'), ('maxN', 'FuMa')])
+def test_result_signal_is_first_order_acn_n3d(
+        impulse_response, normalization, channel_convention):
     converted = impulse_response.copy()
-    converted.normalization = 'SN3D'
+    converted.channel_convention = channel_convention
+    converted.normalization = normalization
 
     signal = parametric.PseudoIntensityVectorAnalyzer(None)(converted).signal
 
@@ -181,7 +203,7 @@ def test_default_parameters():
     assert analyzer.passband is None
 
 
-@pytest.mark.parametrize('window_length', [1, 0, -3])
+@pytest.mark.parametrize('window_length', [1, 0, -3, True])
 def test_error_if_the_window_is_shorter_than_three_samples(window_length):
     with pytest.raises(ValueError, match='window_length is .* at least 3'):
         parametric.PseudoIntensityVectorAnalyzer(window_length=window_length)
@@ -211,35 +233,21 @@ def test_error_for_capsule_signals_points_to_the_tdoa_analyzer():
             pf.Signal(np.zeros((6, 64)), 48000))
 
 
-def test_error_if_the_input_has_no_dipole_channels():
-    with pytest.raises(ValueError, match='at least order 1, got order 0'):
-        parametric.PseudoIntensityVectorAnalyzer(None)(
-            sh_signal(np.zeros((1, 16))))
-
-
-def test_error_if_the_basis_is_complex():
-    signal = SphericalHarmonicSignal(
+@pytest.mark.parametrize(('signal', 'message'), [
+    (SphericalHarmonicSignal(
         np.zeros((4, 16), dtype=complex), 48000, 'complex', 'N3D', 'ACN',
-        False, is_complex=True)
-
-    with pytest.raises(ValueError, match='must be real, in ACN'):
+        False, is_complex=True),
+     'PseudoIntensityVectorAnalyzer requires a real signal without the '
+     'Condon-Shortley phase; got complex'),
+    (sh_signal(np.zeros((2, 4, 16))),
+     'PseudoIntensityVectorAnalyzer expects a single spherical harmonic '
+     'signal'),
+    (sh_signal(np.zeros((1, 16))),
+     'signal has order 0 but PseudoIntensityVectorAnalyzer needs at least '
+     'order 1')])
+def test_error_for_a_signal_the_analyzer_cannot_read(signal, message):
+    with pytest.raises(ValueError, match=message):
         parametric.PseudoIntensityVectorAnalyzer(None)(signal)
-
-
-@pytest.mark.parametrize(('attribute', 'value'), [
-    ('channel_convention', 'FuMa'), ('normalization', 'maxN'),
-    ('condon_shortley', True)])
-def test_error_for_another_convention(impulse_response, attribute, value):
-    setattr(impulse_response, attribute, value)
-
-    with pytest.raises(ValueError, match='must be real, in ACN'):
-        parametric.PseudoIntensityVectorAnalyzer(None)(impulse_response)
-
-
-def test_error_if_more_than_one_signal_is_given():
-    with pytest.raises(ValueError, match='a single spherical harmonic signal'):
-        parametric.PseudoIntensityVectorAnalyzer(None)(
-            sh_signal(np.zeros((2, 4, 16))))
 
 
 def test_input_signal_is_not_modified(impulse_response):
@@ -251,6 +259,13 @@ def test_input_signal_is_not_modified(impulse_response):
 
     assert converted.normalization == 'SN3D'
     np.testing.assert_array_equal(np.asarray(converted.time), before)
+
+
+def test_result_shares_no_memory_with_the_input(impulse_response):
+    result = parametric.PseudoIntensityVectorAnalyzer(None)(impulse_response)
+
+    assert not np.shares_memory(result.signal.time, impulse_response.time)
+    assert not np.shares_memory(result.pressure.time, impulse_response.time)
 
 
 # ===== time difference of arrival ==========================================
